@@ -1,0 +1,15 @@
+{
+  "name": "haywire",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "dev": "pnpm --filter @haywire/game build && pnpm --parallel --filter @haywire/server --filter @haywire/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter @haywire/game test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
