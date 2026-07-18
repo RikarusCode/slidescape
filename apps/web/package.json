@@ -1,5 +1,5 @@
 {
-  "name": "@haywire/web",
+  "name": "@slidescape/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@haywire/game": "workspace:*",
+    "@slidescape/game": "workspace:*",
     "lucide-react": "^0.522.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

@@ -23,7 +23,7 @@ importers:
       '@fastify/rate-limit':
         specifier: ^10.3.0
         version: 10.3.0
-      '@haywire/game':
+      '@slidescape/game':
         specifier: workspace:*
         version: link:../../packages/game
       fastify:
@@ -48,7 +48,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@haywire/game':
+      '@slidescape/game':
         specifier: workspace:*
         version: link:../../packages/game
       lucide-react:

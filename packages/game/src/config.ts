@@ -2,7 +2,7 @@ import type { Color, Position } from "./types.js";
 
 export const COLOR_ORDER: Color[] = ["green", "yellow", "red", "blue"];
 export const COLOR_HEX: Record<Color, string> = {
-  green: "#63a744", yellow: "#f4c430", red: "#df3f35", blue: "#2f80d0"
+  green: "#18a999", yellow: "#f6a623", red: "#ef5b5b", blue: "#3977d3"
 };
 
 const long = [1, 3, 5, 10, 12, 14];
@@ -28,4 +28,3 @@ export const GOAL_LANES: Record<Color, Position[]> = {
 };
 
 export const SCORE_TARGET = { "quick-2": 4, "strategic-2": 10, "classic-4": 6 } as const;
-

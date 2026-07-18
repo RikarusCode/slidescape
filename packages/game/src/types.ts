@@ -1,6 +1,7 @@
 export const BOARD_SIZE = 17;
 
 export type GameMode = "quick-2" | "strategic-2" | "classic-4";
+export type TurnTimerSeconds = 0 | 45 | 90 | 180;
 export type Color = "green" | "yellow" | "red" | "blue";
 export type Direction = "up" | "right" | "down" | "left";
 export type PieceKind = "pig" | "hay" | "cow";
@@ -58,6 +59,8 @@ export interface TurnState {
   harvestForbidden?: boolean;
   movesRemaining: number;
   pendingPoop: PoopCardId[];
+  fishDrawAvailable?: boolean;
+  walrusRelocationsRemaining?: number;
   timerDeadline?: number;
 }
 
@@ -110,7 +113,7 @@ export type HarvestPlay =
 
 export interface LobbySettings {
   mode: GameMode;
-  turnTimer: boolean;
+  turnTimerSeconds: TurnTimerSeconds;
   privacy: "private" | "random";
 }
 
@@ -118,7 +121,7 @@ export type ClientCommand =
   | { type: "roll"; commandId: string; expectedVersion: number }
   | { type: "draw-harvest"; commandId: string; expectedVersion: number }
   | { type: "move"; commandId: string; expectedVersion: number; move: LegalMove }
-  | { type: "place-cow"; commandId: string; expectedVersion: number; to: Position }
+  | { type: "place-cow"; commandId: string; expectedVersion: number; to: Position; leavePoop?: boolean; poopFrom?: Position }
   | { type: "play-harvest"; commandId: string; expectedVersion: number; play: HarvestPlay }
   | { type: "end-turn"; commandId: string; expectedVersion: number };
 

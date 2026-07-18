@@ -1,11 +1,11 @@
 {
-  "name": "haywire",
+  "name": "slidescape",
   "private": true,
   "packageManager": "pnpm@10.12.1",
   "scripts": {
-    "dev": "pnpm --filter @haywire/game build && pnpm --parallel --filter @haywire/server --filter @haywire/web dev",
+    "dev": "pnpm --filter @slidescape/game build && pnpm --parallel --filter @slidescape/server --filter @slidescape/web dev",
     "build": "pnpm -r build",
-    "test": "pnpm --filter @haywire/game test",
+    "test": "vitest run",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {

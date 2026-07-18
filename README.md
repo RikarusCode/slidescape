@@ -1,6 +1,6 @@
-# Haywire
+# Slidescape
 
-Haywire is a responsive, real-time farm strategy board game for two or four players. It uses a server-authoritative TypeScript rules engine, random matchmaking, and private rooms with invite codes.
+Slidescape is a responsive, real-time ice strategy board game for two or four players. It uses a server-authoritative TypeScript rules engine, random matchmaking, and private rooms with invite codes.
 
 ## Run locally
 

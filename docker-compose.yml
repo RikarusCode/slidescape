@@ -5,8 +5,7 @@ services:
       - "6379:6379"
     command: redis-server --save 60 1 --loglevel warning
     volumes:
-      - haywire-redis:/data
+      - slidescape-redis:/data
 
 volumes:
-  haywire-redis:
-
+  slidescape-redis:

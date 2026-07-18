@@ -4,7 +4,7 @@ import rateLimit from "@fastify/rate-limit";
 import { Server } from "socket.io";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
-import type { ClientCommand, GameMode } from "@haywire/game";
+import type { ClientCommand, GameMode, TurnTimerSeconds } from "@slidescape/game";
 import { RoomManager, type Member } from "./rooms.js";
 import { createStore } from "./store.js";
 
@@ -12,7 +12,7 @@ const app = Fastify({ logger: true });
 await app.register(cors, { origin: true, credentials: true });
 await app.register(rateLimit, { max: 180, timeWindow: "1 minute" });
 
-app.get("/health", async () => ({ ok: true, service: "haywire-server" }));
+app.get("/health", async () => ({ ok: true, service: "slidescape-server" }));
 app.get("/metrics", async () => ({ ok: true, uptimeSeconds: Math.floor(process.uptime()) }));
 
 const webRoot = resolve(process.cwd(), "apps/web/dist");
@@ -41,12 +41,13 @@ io.on("connection", (socket) => {
       if (restored.room.game) socket.emit("game-state", restored.room.game);
     }
   }
-  member ??= rooms.guest(auth.name ?? "Farmhand", socket.id);
+  member ??= rooms.guest(auth.name ?? "Penguin Player", socket.id);
   socket.emit("session", { playerId: member.id, reconnectToken: member.reconnectToken });
 
-  socket.on("create-private", async (payload: { mode: GameMode; turnTimer: boolean }, reply) => {
+  socket.on("create-private", async (payload: { mode: GameMode; turnTimerSeconds: TurnTimerSeconds }, reply) => {
     try {
-      const room = rooms.createPrivate(member!, payload);
+      const turnTimerSeconds: TurnTimerSeconds = [0, 45, 90, 180].includes(payload.turnTimerSeconds) ? payload.turnTimerSeconds : 0;
+      const room = rooms.createPrivate(member!, { mode: payload.mode, turnTimerSeconds });
       await socket.join(room.id);
       rooms.emitLobby(room);
       reply?.({ ok: true, room: rooms.publicLobby(room) });
@@ -71,13 +72,24 @@ io.on("connection", (socket) => {
     reply?.({ ok: true, waiting: !room });
   });
 
+  socket.on("play-bot", async (payload: { mode: GameMode }, reply) => {
+    try {
+      const room = await rooms.createBotGame(member!, payload.mode);
+      await socket.join(room.id);
+      socket.emit("lobby-state", rooms.publicLobby(room));
+      socket.emit("game-state", room.game);
+      reply?.({ ok: true });
+    } catch (error) { reply?.({ ok: false, message: error instanceof Error ? error.message : "Could not start a bot game." }); }
+  });
+
   socket.on("ready", async (ready: boolean) => {
     const room = rooms.roomFor(member!.id);
     if (room) await rooms.setReady(room, member!.id, ready);
   });
-  socket.on("timer-vote", (enabled: boolean) => {
-    const room = rooms.roomFor(member!.id);
-    if (room) rooms.setTimerVote(room, member!.id, enabled);
+  socket.on("leave-lobby", async (reply) => {
+    const roomId = rooms.leaveLobby(member!.id);
+    if (roomId) await socket.leave(roomId);
+    reply?.({ ok: true });
   });
   socket.on("command", async (command: ClientCommand, reply) => {
     const room = rooms.roomFor(member!.id);

@@ -1,6 +1,6 @@
 import { io, type Socket } from "socket.io-client";
 
-export const SESSION_KEY = "haywire-session-v1";
+export const SESSION_KEY = "slidescape-session-v1";
 export interface Session { playerId: string; reconnectToken: string }
 
 export function readSession(): Session | undefined {
@@ -14,4 +14,3 @@ export function connectGame(name: string): Socket {
   const session = readSession();
   return io({ auth: { name, reconnectToken: session?.reconnectToken }, transports: ["websocket", "polling"] });
 }
-

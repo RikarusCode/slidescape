@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import type { GameState } from "@haywire/game";
+import type { GameState } from "@slidescape/game";
 
 export interface GameStore {
   save(state: GameState): Promise<void>;
@@ -15,10 +15,10 @@ class MemoryStore implements GameStore {
 class RedisStore implements GameStore {
   constructor(private readonly redis: Redis) {}
   async save(state: GameState) {
-    await this.redis.set(`haywire:game:${state.id}`, JSON.stringify(state), "EX", 86_400);
+    await this.redis.set(`slidescape:game:${state.id}`, JSON.stringify(state), "EX", 86_400);
   }
   async load(id: string) {
-    const value = await this.redis.get(`haywire:game:${id}`);
+    const value = await this.redis.get(`slidescape:game:${id}`);
     return value ? JSON.parse(value) as GameState : undefined;
   }
 }
@@ -27,4 +27,3 @@ export function createStore(): GameStore {
   const url = process.env.REDIS_URL;
   return url ? new RedisStore(new Redis(url, { maxRetriesPerRequest: 2, lazyConnect: false })) : new MemoryStore();
 }
-

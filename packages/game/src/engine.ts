@@ -123,7 +123,7 @@ function pigMove(state: GameState, piece: Piece, direction: Direction, flyover =
     if (!inside(next)) break;
     const blocker = blockers.get(key(next));
     if (blocker) {
-      if (flyover && !ignored && ["pig", "hay", "cow"].includes(blocker.kind)) {
+      if (flyover && !ignored && ["pig", "hay", "cow"].includes(blocker.kind) && !(blocker.kind === "cow" && state.fenceActive)) {
         ignored = true;
         cursor = next;
         continue;
@@ -258,6 +258,8 @@ export function roll(state: GameState, actorId: string): GameState {
   next.turn.rolled = rolled;
   next.turn.harvestForbidden = forcedTwo;
   next.turn.movesRemaining = rolled;
+  next.turn.fishDrawAvailable = rolled === 2 && !forcedTwo;
+  next.turn.walrusRelocationsRemaining = rolled === 1 ? 1 : 0;
   next.turn.phase = "moving";
   next.version += 1;
   next.log.push(`${player.name} rolled ${rolled}.`);
@@ -267,15 +269,16 @@ export function roll(state: GameState, actorId: string): GameState {
 export function drawHarvest(state: GameState, actorId: string): GameState {
   const next = structuredClone(state);
   const player = activePlayer(next);
-  if (player.id !== actorId || next.turn.phase !== "moving" || next.turn.rolled !== 2 || next.turn.movesRemaining !== 2) throw new Error("A Harvest card can only replace an unused roll of two.");
-  if (player.harvestCard) throw new Error("You may hold only one Harvest card.");
-  if (next.turn.harvestForbidden) throw new Error("A forced two-move turn cannot be traded for Harvest.");
+  if (player.id !== actorId || next.turn.phase !== "moving" || !next.turn.fishDrawAvailable) throw new Error("A Fish card can only replace an unused natural roll of two.");
+  if (player.harvestCard) throw new Error("You may hold only one Fish card.");
+  if (next.turn.harvestForbidden) throw new Error("A forced two-move turn cannot be traded for Fish.");
   if (next.harvestDeck.length === 0) next.harvestDeck = expandedHarvestDeck();
   player.harvestCard = next.harvestDeck.shift();
   player.harvestDrawnTurn = next.turn.number;
   next.turn.movesRemaining = 0;
+  next.turn.fishDrawAvailable = false;
   next.version += 1;
-  next.log.push(`${player.name} drew a Harvest card.`);
+  next.log.push(`${player.name} drew a Fish card.`);
   return endTurn(next, actorId);
 }
 
@@ -287,7 +290,10 @@ export function move(state: GameState, actorId: string, requested: LegalMove): G
   const preRoll = next.turn.phase === "awaiting-roll";
   applyMoveUnchecked(next, candidate);
   if (preRoll) activePlayer(next).effects.forcedOpponentMoves -= 1;
-  else next.turn.movesRemaining -= 1;
+  else {
+    next.turn.movesRemaining -= 1;
+    next.turn.fishDrawAvailable = false;
+  }
   next.version += 1;
   next.log.push(`${candidate.pieceId} moved ${candidate.direction}.`);
   return next;
@@ -315,6 +321,7 @@ export function playHarvest(state: GameState, actorId: string, play: HarvestPlay
   if (play.cardId === "double-roll") {
     if (!next.turn.rolled) throw new Error("Roll before doubling it.");
     next.turn.movesRemaining += next.turn.rolled;
+    if (next.turn.rolled === 1) next.turn.walrusRelocationsRemaining = (next.turn.walrusRelocationsRemaining ?? 0) + 1;
   }
   if (play.cardId === "steal-or-two") {
     if (play.choice === "two") next.turn.movesRemaining += 2;
@@ -347,6 +354,8 @@ export function playHarvest(state: GameState, actorId: string, play: HarvestPlay
     next.seed = seed;
     next.turn.rolled = Math.floor(value * 6) + 1;
     next.turn.movesRemaining = next.turn.rolled;
+    next.turn.fishDrawAvailable = next.turn.rolled === 2;
+    next.turn.walrusRelocationsRemaining = next.turn.rolled === 1 ? 1 : 0;
   }
   if (play.cardId !== "steal-or-two" || play.choice === "two") returnHarvest(next, player);
   next.version += 1;
@@ -410,20 +419,33 @@ export function endTurn(state: GameState, actorId: string): GameState {
   return next;
 }
 
-export function placeCowAndPoop(state: GameState, actorId: string, to: Position): GameState {
+export function placeCowAndPoop(
+  state: GameState,
+  actorId: string,
+  to: Position,
+  options: { leavePoop?: boolean; poopFrom?: Position } = { leavePoop: true }
+): GameState {
   const next = structuredClone(state);
   const player = activePlayer(next);
-  if (player.id !== actorId || next.turn.phase !== "moving" || next.turn.rolled !== 1 || next.turn.movesRemaining !== 1) throw new Error("The cow can be relocated only as the unused action from a roll of one.");
+  if (player.id !== actorId || next.turn.phase !== "moving" || next.turn.movesRemaining < 1 || (next.turn.walrusRelocationsRemaining ?? 0) < 1) throw new Error("The walrus can be relocated only with an unused walrus action from a roll of one.");
   if (!inside(to) || occupied(next, "cow").has(key(to))) throw new Error("Choose an open square.");
   const cow = next.pieces.find((piece) => piece.kind === "cow")!;
   cow.position = { ...to };
   next.fenceActive = false;
-  if (next.poopSupply > 0 && !next.poop.some((poop) => same(poop, to))) {
-    next.poop.push({ ...to });
-    next.poopSupply -= 1;
+  if (options.leavePoop !== false && !next.poop.some((poop) => same(poop, to))) {
+    if (next.poopSupply > 0) {
+      next.poop.push({ ...to });
+      next.poopSupply -= 1;
+    } else {
+      const index = options.poopFrom ? next.poop.findIndex((poop) => same(poop, options.poopFrom!)) : -1;
+      if (index < 0) throw new Error("Choose a poop token to recycle under the walrus.");
+      next.poop[index] = { ...to };
+    }
   }
-  next.turn.movesRemaining = 0;
+  next.turn.movesRemaining -= 1;
+  next.turn.walrusRelocationsRemaining = Math.max(0, (next.turn.walrusRelocationsRemaining ?? 0) - 1);
+  next.turn.fishDrawAvailable = false;
   next.version += 1;
-  next.log.push(`${player.name} relocated the cow.`);
+  next.log.push(`${player.name} relocated the walrus${options.leavePoop === false ? "" : " and left poop"}.`);
   return next;
 }

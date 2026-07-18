@@ -13,7 +13,7 @@ import {
   type GameMode,
   type GameState,
   type LobbySettings
-} from "@haywire/game";
+} from "@slidescape/game";
 import type { GameStore } from "./store.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -26,7 +26,7 @@ export interface Member {
   reconnectToken: string;
   ready: boolean;
   connected: boolean;
-  timerVote: boolean;
+  isBot?: boolean;
 }
 
 export interface Room {
@@ -57,12 +57,11 @@ export class RoomManager {
   guest(name: string, socketId: string): Member {
     return {
       id: randomUUID(),
-      name: name.trim().slice(0, 24) || "Farmhand",
+      name: name.trim().slice(0, 24) || "Penguin Player",
       socketId,
       reconnectToken: randomBytes(24).toString("base64url"),
       ready: false,
-      connected: true,
-      timerVote: false
+      connected: true
     };
   }
 
@@ -97,14 +96,55 @@ export class RoomManager {
     const members = queue.splice(0, playerCount(mode));
     const room: Room = {
       id: randomUUID(), hostId: members[0]!.id,
-      settings: { mode, privacy: "random", turnTimer: false }, members, processed: new Set()
+      settings: { mode, privacy: "random", turnTimerSeconds: 90 }, members, processed: new Set()
     };
     this.rooms.set(room.id, room);
     members.forEach((candidate) => this.memberRoom.set(candidate.id, room.id));
     return room;
   }
 
+  async createBotGame(member: Member, mode: GameMode): Promise<Room> {
+    const bots = Array.from({ length: playerCount(mode) - 1 }, (_, index) => ({
+      ...this.guest(playerCount(mode) === 2 ? "Testing Bot" : `Testing Bot ${index + 1}`, `bot-${randomUUID()}`),
+      isBot: true
+    }));
+    const members = [member, ...bots];
+    const room: Room = {
+      id: randomUUID(), hostId: member.id,
+      settings: { mode, privacy: "random", turnTimerSeconds: 0 }, members, processed: new Set()
+    };
+    room.game = createGame(room.id, mode, members.map(({ id, name }) => ({ id, name })));
+    this.rooms.set(room.id, room);
+    members.forEach((candidate) => this.memberRoom.set(candidate.id, room.id));
+    await this.store.save(room.game);
+    return room;
+  }
+
   roomFor(memberId: string) { return this.rooms.get(this.memberRoom.get(memberId) ?? ""); }
+
+  leaveLobby(memberId: string) {
+    for (const [mode, queue] of this.queues) {
+      const remaining = queue.filter((member) => member.id !== memberId);
+      if (remaining.length !== queue.length) this.queues.set(mode, remaining);
+    }
+
+    const room = this.roomFor(memberId);
+    if (!room || room.game) return undefined;
+
+    this.memberRoom.delete(memberId);
+    room.members = room.members.filter((member) => member.id !== memberId);
+
+    if (room.members.length === 0 || room.hostId === memberId) {
+      for (const member of room.members) this.memberRoom.delete(member.id);
+      if (room.code) this.codeToRoom.delete(room.code);
+      this.rooms.delete(room.id);
+      this.io.to(room.id).emit("lobby-closed", "The room host returned home.");
+    } else {
+      this.emitLobby(room);
+    }
+
+    return room.id;
+  }
 
   publicLobby(room: Room) {
     return {
@@ -122,20 +162,11 @@ export class RoomManager {
     if (!member || room.game) return;
     member.ready = ready;
     if (room.members.length === playerCount(room.settings.mode) && room.members.every((candidate) => candidate.ready)) {
-      room.settings.turnTimer = room.settings.privacy === "private"
-        ? room.settings.turnTimer
-        : room.members.every((candidate) => candidate.timerVote);
       room.game = createGame(room.id, room.settings.mode, room.members.map(({ id, name }) => ({ id, name })));
       await this.store.save(room.game);
       this.armTimer(room);
       this.io.to(room.id).emit("game-state", room.game);
     } else this.emitLobby(room);
-  }
-
-  setTimerVote(room: Room, memberId: string, enabled: boolean) {
-    const member = room.members.find((candidate) => candidate.id === memberId);
-    if (member && !room.game) member.timerVote = enabled;
-    this.emitLobby(room);
   }
 
   async command(room: Room, actorId: string, command: ClientCommand) {
@@ -148,15 +179,16 @@ export class RoomManager {
       if (command.type === "roll") next = roll(next, actorId);
       if (command.type === "draw-harvest") next = drawHarvest(next, actorId);
       if (command.type === "move") next = move(next, actorId, command.move);
-      if (command.type === "place-cow") next = placeCowAndPoop(next, actorId, command.to);
+      if (command.type === "place-cow") next = placeCowAndPoop(next, actorId, command.to, { leavePoop: command.leavePoop, poopFrom: command.poopFrom });
       if (command.type === "play-harvest") next = playHarvest(next, actorId, command.play);
       if (command.type === "end-turn") next = endTurn(next, actorId);
       room.game = next;
       room.processed.add(command.commandId);
       if (room.processed.size > 500) room.processed = new Set(Array.from(room.processed).slice(-250));
       await this.store.save(next);
-      this.armTimer(room);
       this.io.to(room.id).emit(next.status === "finished" ? "game-over" : "game-state", next);
+      await this.runBotTurns(room);
+      this.armTimer(room);
     });
     this.locks.set(room.id, work.catch(() => undefined));
     return work;
@@ -204,10 +236,37 @@ export class RoomManager {
 
   private armTimer(room: Room) {
     if (room.timeout) clearTimeout(room.timeout);
-    if (!room.settings.turnTimer || !room.game || room.game.status !== "playing") return;
-    room.game.turn.timerDeadline = Date.now() + 90_000;
-    room.timeout = setTimeout(() => this.completeTimedTurn(room), 90_000);
+    if (!room.settings.turnTimerSeconds || !room.game || room.game.status !== "playing") return;
+    const durationMs = room.settings.turnTimerSeconds * 1_000;
+    room.game.turn.timerDeadline = Date.now() + durationMs;
+    room.timeout = setTimeout(() => this.completeTimedTurn(room), durationMs);
     room.timeout.unref();
+  }
+
+  private async runBotTurns(room: Room) {
+    let state = room.game;
+    let turnGuard = 8;
+    while (state?.status === "playing" && room.members.find((member) => member.id === state!.turn.activePlayerId)?.isBot && turnGuard-- > 0) {
+      const actor = state.turn.activePlayerId;
+      let actionGuard = 96;
+
+      while (state.turn.phase === "awaiting-roll" && state.players.find((player) => player.id === actor)!.effects.forcedOpponentMoves > 0 && actionGuard-- > 0) {
+        const moves = legalMoves(state, actor);
+        if (!moves.length) break;
+        state = move(state, actor, moves[state.seed % moves.length]!);
+      }
+
+      if (state.turn.phase === "awaiting-roll") state = roll(state, actor);
+      while (state.turn.phase === "moving" && state.turn.movesRemaining > 0 && actionGuard-- > 0) {
+        const moves = legalMoves(state, actor);
+        if (!moves.length) break;
+        state = move(state, actor, moves[(state.seed + actionGuard) % moves.length]!);
+      }
+      state = endTurn(state, actor);
+      room.game = state;
+      await this.store.save(state);
+      this.io.to(room.id).emit(state.status === "finished" ? "game-over" : "game-state", state);
+    }
   }
 
   private async completeTimedTurn(room: Room) {
@@ -233,4 +292,3 @@ export class RoomManager {
     }
   }
 }
-
