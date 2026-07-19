@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { ClientCommand, GameMode, GameState, TurnTimerSeconds } from "@slidescape/game";
+import type { ClientCommand, GameMode, GameState, PlayerColor, TurnTimerSeconds } from "@slidescape/game";
 import type { Socket } from "socket.io-client";
 import { GameView } from "./components/GameView.js";
 import { Home, WaitingRoom, type LobbyState } from "./components/Lobby.js";
 import { connectGame, readSession, SESSION_KEY, type Session } from "./socket.js";
+
+interface ActionReply { ok: boolean; message?: string; waiting?: boolean }
 
 export function App() {
   const [name, setName] = useState(() => localStorage.getItem("slidescape-name") ?? "");
@@ -14,6 +16,7 @@ export function App() {
   const [lobby, setLobby] = useState<LobbyState>();
   const [game, setGame] = useState<GameState>();
   const [message, setMessage] = useState<string>();
+  const [searching, setSearching] = useState(false);
   const [connected, setConnected] = useState(false);
   const socketRef = useRef<Socket | undefined>(undefined);
 
@@ -24,10 +27,31 @@ export function App() {
     localStorage.setItem("slidescape-name", name.trim() || "Penguin Player");
     socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
-    socket.on("session", (value: Session) => { setSession(value); localStorage.setItem(SESSION_KEY, JSON.stringify(value)); });
-    socket.on("lobby-state", (value: LobbyState) => setLobby(value));
+    socket.on("connect_error", () => {
+      setConnected(false);
+      setSearching(false);
+      setMessage("Could not reach the game server. Check that it is running, then try again.");
+    });
+    socket.on("session-reset", (value: string) => {
+      setGame(undefined);
+      setLobby(undefined);
+      setSearching(false);
+      setMessage(value);
+    });
+    socket.on("session", (value: Session) => {
+      const previous = readSession();
+      if (previous && previous.reconnectToken !== value.reconnectToken) {
+        setGame(undefined);
+        setLobby(undefined);
+        setSearching(false);
+        setMessage("Your previous match is no longer available. You can start a new game.");
+      }
+      setSession(value);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(value));
+    });
+    socket.on("lobby-state", (value: LobbyState) => { setLobby(value); setSearching(false); setMessage(undefined); });
     socket.on("lobby-closed", (value: string) => { setLobby(undefined); setMessage(value); });
-    socket.on("game-state", (value: GameState) => { setGame(value); setMessage(undefined); });
+    socket.on("game-state", (value: GameState) => { setGame(value); setSearching(false); setMessage(undefined); });
     socket.on("game-over", (value: GameState) => setGame(value));
     socket.on("server-message", (value: string) => setMessage(value));
     return socket;
@@ -40,14 +64,34 @@ export function App() {
       socketRef.current = undefined;
     };
   }, []);
-  const action = (event: string, payload: unknown) => {
+  const emitWithReply = (event: string, payload: unknown, handleReply: (reply: ActionReply) => void) => {
     const socket = ensureSocket();
-    socket.emit(event, payload, (reply: { ok: boolean; message?: string; waiting?: boolean }) => {
+    setMessage(undefined);
+    socket.timeout(5000).emit(event, payload, (error: Error | null, reply?: ActionReply) => {
+      if (error || !reply) {
+        setSearching(false);
+        setMessage("The game server did not respond. Please try again.");
+        return;
+      }
+      handleReply(reply);
+    });
+  };
+  const action = (event: string, payload: unknown) => {
+    emitWithReply(event, payload, (reply) => {
       if (!reply.ok) setMessage(reply.message ?? "Something went wrong.");
       else if (reply.waiting) setMessage("Searching for another player…");
     });
   };
   const send = (command: ClientCommand) => action("command", command);
+  const queueRandom = () => {
+    emitWithReply("join-queue", { mode }, (reply) => {
+      if (!reply.ok) setMessage(reply.message ?? "Could not join matchmaking.");
+      else if (reply.waiting) { setSearching(true); setMessage(undefined); }
+    });
+  };
+  const cancelQueue = () => {
+    ensureSocket().emit("leave-lobby", () => { setSearching(false); setMessage(undefined); });
+  };
   const leaveLobby = () => {
     const socket = ensureSocket();
     socket.emit("leave-lobby", () => {
@@ -57,7 +101,31 @@ export function App() {
     });
   };
 
-  if (game && session) return <GameView state={game} playerId={session.playerId} roomCode={lobby?.code} connected={connected} send={send}/>;
-  if (lobby && session) return <WaitingRoom lobby={lobby} playerId={session.playerId} onLeave={leaveLobby} onReady={(ready) => ensureSocket().emit("ready", ready)}/>;
-  return <Home name={name} setName={setName} mode={mode} setMode={setMode} code={code} setCode={setCode} privateTimerSeconds={privateTimerSeconds} setPrivateTimerSeconds={setPrivateTimerSeconds} onCreate={() => action("create-private", { mode, turnTimerSeconds: privateTimerSeconds })} onJoin={() => action("join-private", { code })} onQueue={() => action("join-queue", { mode })} onBot={() => action("play-bot", { mode })} message={message}/>;
+  const returnHome = (notice?: string) => {
+    socketRef.current?.disconnect();
+    socketRef.current = undefined;
+    localStorage.removeItem(SESSION_KEY);
+    setConnected(false);
+    setSession(undefined);
+    setGame(undefined);
+    setLobby(undefined);
+    setSearching(false);
+    setMessage(notice);
+  };
+
+  const leaveGame = () => {
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      returnHome();
+      return;
+    }
+    socket.timeout(3000).emit("leave-game", (error: Error | null, reply?: { ok: boolean; message?: string }) => {
+      if (error) returnHome("The match connection was lost, so you were returned home locally.");
+      else returnHome(reply?.ok ? undefined : "That match had already ended on the server.");
+    });
+  };
+
+  if (game && session) return <GameView state={game} playerId={session.playerId} roomCode={lobby?.code} connected={connected} message={message} send={send} onLeaveGame={leaveGame}/>;
+  if (lobby && session) return <WaitingRoom lobby={lobby} playerId={session.playerId} message={message} onLeave={leaveLobby} onReady={(ready) => ensureSocket().emit("ready", ready)} onColorChange={(color?: PlayerColor) => action("select-color", { color })}/>;
+  return <Home name={name} setName={setName} mode={mode} setMode={setMode} code={code} setCode={setCode} privateTimerSeconds={privateTimerSeconds} setPrivateTimerSeconds={setPrivateTimerSeconds} onCreate={() => action("create-private", { mode, turnTimerSeconds: privateTimerSeconds })} onJoin={() => action("join-private", { code })} onQueue={queueRandom} onCancelQueue={cancelQueue} onBot={() => action("play-bot", { mode })} searching={searching} message={message}/>;
 }

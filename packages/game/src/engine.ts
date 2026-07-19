@@ -1,4 +1,4 @@
-import { COLOR_ORDER, GOAL_LANES, HAY_POSITIONS, SCORE_TARGET, STARTING_POSITIONS } from "./config.js";
+import { COLOR_ORDER, FENCE_POSITIONS, GOAL_LANES, HAY_POSITIONS, PLAYER_COLOR_ORDER, SCORE_TARGET, STARTING_POSITIONS } from "./config.js";
 import { expandedHarvestDeck, expandedPoopDeck } from "./cards.js";
 import { nextRandom, shuffle } from "./random.js";
 import {
@@ -6,6 +6,7 @@ import {
   type Color,
   type Direction,
   type GameMode,
+  type GameGuest,
   type GameState,
   type HarvestPlay,
   type LegalMove,
@@ -26,6 +27,15 @@ const step = (position: Position, direction: Direction): Position => ({
   x: position.x + DELTA[direction].x,
   y: position.y + DELTA[direction].y
 });
+const START_FACING: Record<Color, Direction> = { green: "down", yellow: "left", red: "up", blue: "right" };
+
+function facingToward(from: Position, to: Position, fallback: Direction = "down"): Direction {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "right" : "left";
+  if (dy !== 0) return dy > 0 ? "down" : "up";
+  return fallback;
+}
 
 function emptyEffects() {
   return { skipTurns: 0, forcedTwoMoveTurns: 0, forcedOpponentMoves: 0, flyoverCharges: 0, avoidPoopCharges: 0 };
@@ -33,21 +43,38 @@ function emptyEffects() {
 
 function playerColors(mode: GameMode): Color[][] {
   if (mode === "quick-2") return [["green"], ["red"]];
-  if (mode === "strategic-2") return [["green", "yellow"], ["red", "blue"]];
+  if (mode === "strategic-2") return [["green", "blue"], ["red", "yellow"]];
   return COLOR_ORDER.map((color) => [color]);
+}
+
+function assignThemeColors(guests: GameGuest[], seed: number) {
+  const claimed = new Set(guests.flatMap((guest) => guest.colorChoice ? [guest.colorChoice] : []));
+  if (claimed.size !== guests.filter((guest) => guest.colorChoice).length) throw new Error("Each player must have a distinct color.");
+  const available = PLAYER_COLOR_ORDER.filter((color) => !claimed.has(color));
+  let nextSeed = seed;
+  const colors = guests.map((guest) => {
+    if (guest.colorChoice) return guest.colorChoice;
+    const [value, advanced] = nextRandom(nextSeed);
+    nextSeed = advanced;
+    return available.splice(Math.floor(value * available.length), 1)[0]!;
+  });
+  return [colors, nextSeed] as const;
 }
 
 export function createGame(
   id: string,
   mode: GameMode,
-  guests: { id: string; name: string }[],
+  guests: GameGuest[],
   seed = Date.now() >>> 0
 ): GameState {
   const assignments = playerColors(mode);
   if (guests.length !== assignments.length) throw new Error(`${mode} requires ${assignments.length} players.`);
+  const [themeColors, afterColors] = assignThemeColors(guests, seed);
   const players: PlayerState[] = guests.map((guest, index) => ({
-    ...guest,
+    id: guest.id,
+    name: guest.name,
     colors: assignments[index]!,
+    themeColor: themeColors[index]!,
     score: 0,
     connected: true,
     effects: emptyEffects()
@@ -59,17 +86,19 @@ export function createGame(
   const pieces: Piece[] = [];
   for (const color of activeColors) {
     STARTING_POSITIONS[color].forEach((position, index) => pieces.push({
-      id: `${color}-pig-${index + 1}`, kind: "pig", color, ownerId: ownerByColor.get(color), position: { ...position }
+      id: `${color}-pig-${index + 1}`, kind: "pig", color, ownerId: ownerByColor.get(color), position: { ...position }, facing: START_FACING[color]
     }));
     HAY_POSITIONS[color].forEach((position, index) => pieces.push({
       id: `${color}-hay-${index + 1}`, kind: "hay", color, ownerId: ownerByColor.get(color), position: { ...position }
     }));
   }
-  pieces.push({ id: "cow", kind: "cow", position: { x: 8, y: 8 } });
-  const [harvestDeck, afterHarvest] = shuffle(expandedHarvestDeck(), seed);
+  pieces.push({ id: "cow", kind: "cow", position: { x: 6, y: 6 }, facing: "down" });
+  const [firstValue, afterFirstPlayer] = nextRandom(afterColors);
+  const firstPlayer = players[Math.floor(firstValue * players.length)]!;
+  const [harvestDeck, afterHarvest] = shuffle(expandedHarvestDeck(), afterFirstPlayer);
   const [poopDeck, afterPoop] = shuffle(expandedPoopDeck(), afterHarvest);
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     id,
     mode,
     status: "playing",
@@ -83,8 +112,8 @@ export function createGame(
     harvestDeck,
     poopDeck,
     turnOrder: players.map((player) => player.id),
-    turn: { number: 1, activePlayerId: players[0]!.id, phase: "awaiting-roll", movesRemaining: 0, pendingPoop: [] },
-    log: [`${players[0]!.name} goes first.`]
+    turn: { number: 1, activePlayerId: firstPlayer.id, phase: "awaiting-roll", movesRemaining: 0, pendingPoop: [] },
+    log: [`${firstPlayer.name} was randomly chosen to go first.`]
   };
 }
 
@@ -95,17 +124,22 @@ export function activePlayer(state: GameState): PlayerState {
 }
 
 function occupied(state: GameState, except?: string): Map<string, Piece> {
-  return new Map(state.pieces.filter((piece) => !piece.scored && piece.id !== except).map((piece) => [key(piece.position), piece]));
+  const result = new Map(state.pieces.filter((piece) => !piece.scored && piece.id !== except).map((piece) => [key(piece.position), piece]));
+  if (state.fenceActive) {
+    const cow = state.pieces.find((piece) => piece.kind === "cow")!;
+    for (const position of FENCE_POSITIONS) result.set(key(position), cow);
+  }
+  return result;
 }
 
 function exitsThroughGoal(piece: Piece, position: Position, direction: Direction): boolean {
   if (piece.kind !== "pig" || !piece.color) return false;
   const aligned = GOAL_LANES[piece.color].some((goal) => piece.color === "green" || piece.color === "red" ? goal.x === position.x : goal.y === position.y);
   return aligned && (
-    (piece.color === "green" && direction === "up" && position.y === 0) ||
-    (piece.color === "yellow" && direction === "right" && position.x === 16) ||
-    (piece.color === "red" && direction === "down" && position.y === 16) ||
-    (piece.color === "blue" && direction === "left" && position.x === 0)
+    (piece.color === "green" && direction === "down" && position.y === BOARD_SIZE - 1) ||
+    (piece.color === "yellow" && direction === "left" && position.x === 0) ||
+    (piece.color === "red" && direction === "up" && position.y === 0) ||
+    (piece.color === "blue" && direction === "right" && position.x === BOARD_SIZE - 1)
   );
 }
 
@@ -180,7 +214,7 @@ function goalAccess(state: GameState, player: PlayerState): boolean {
 }
 
 function moveActorAllowed(state: GameState, piece: Piece, actorId: string): boolean {
-  if (piece.kind === "cow") return true;
+  if (piece.kind === "cow") return !state.fenceActive;
   if (piece.ownerId === actorId) return true;
   const active = activePlayer(state);
   return active.effects.forcedOpponentMoves > 0 && piece.ownerId !== actorId;
@@ -191,6 +225,7 @@ export function legalMoves(state: GameState, actorId = state.turn.activePlayerId
   const active = activePlayer(state);
   const preRollOpponentMove = state.turn.phase === "awaiting-roll" && active.effects.forcedOpponentMoves > 0;
   if (state.turn.phase !== "moving" && !preRollOpponentMove) return [];
+  if (!preRollOpponentMove && state.turn.movesRemaining <= 0) return [];
   const moves: LegalMove[] = [];
   for (const piece of state.pieces) {
     if (piece.scored || !moveActorAllowed(state, piece, actorId)) continue;
@@ -209,6 +244,7 @@ export function legalMoves(state: GameState, actorId = state.turn.activePlayerId
 export function legalMovesForPiece(state: GameState, pieceId: string): LegalMove[] {
   const piece = state.pieces.find((candidate) => candidate.id === pieceId && !candidate.scored);
   if (!piece) return [];
+  if (piece.kind === "cow" && state.fenceActive) return [];
   return DIRECTIONS.flatMap((direction) => {
     const candidate = piece.kind === "pig" ? pigMove(state, piece, direction) : stepMove(state, piece, direction);
     if (!candidate) return [];
@@ -227,6 +263,7 @@ function drawPoop(state: GameState): void {
 function applyMoveUnchecked(state: GameState, move: LegalMove, triggerPoop = true): void {
   const piece = state.pieces.find((candidate) => candidate.id === move.pieceId);
   if (!piece) throw new Error("Piece not found.");
+  piece.facing = move.direction;
   if (move.scores) {
     piece.scored = true;
     piece.position = { x: -1, y: -1 };
@@ -285,13 +322,14 @@ export function drawHarvest(state: GameState, actorId: string): GameState {
 export function move(state: GameState, actorId: string, requested: LegalMove): GameState {
   const next = structuredClone(state);
   if (next.turn.activePlayerId !== actorId) throw new Error("It is not your turn.");
+  if (next.turn.phase === "moving" && next.turn.movesRemaining <= 0) throw new Error("No moves remain this turn.");
   const candidate = legalMoves(next, actorId).find((legal) => legal.pieceId === requested.pieceId && legal.direction === requested.direction && same(legal.to, requested.to));
   if (!candidate) throw new Error("That move is not legal.");
   const preRoll = next.turn.phase === "awaiting-roll";
   applyMoveUnchecked(next, candidate);
   if (preRoll) activePlayer(next).effects.forcedOpponentMoves -= 1;
   else {
-    next.turn.movesRemaining -= 1;
+    next.turn.movesRemaining = Math.max(0, next.turn.movesRemaining - 1);
     next.turn.fishDrawAvailable = false;
   }
   next.version += 1;
@@ -430,6 +468,7 @@ export function placeCowAndPoop(
   if (player.id !== actorId || next.turn.phase !== "moving" || next.turn.movesRemaining < 1 || (next.turn.walrusRelocationsRemaining ?? 0) < 1) throw new Error("The walrus can be relocated only with an unused walrus action from a roll of one.");
   if (!inside(to) || occupied(next, "cow").has(key(to))) throw new Error("Choose an open square.");
   const cow = next.pieces.find((piece) => piece.kind === "cow")!;
+  cow.facing = facingToward(cow.position, to, cow.facing);
   cow.position = { ...to };
   next.fenceActive = false;
   if (options.leavePoop !== false && !next.poop.some((poop) => same(poop, to))) {
@@ -442,7 +481,7 @@ export function placeCowAndPoop(
       next.poop[index] = { ...to };
     }
   }
-  next.turn.movesRemaining -= 1;
+  next.turn.movesRemaining = Math.max(0, next.turn.movesRemaining - 1);
   next.turn.walrusRelocationsRemaining = Math.max(0, (next.turn.walrusRelocationsRemaining ?? 0) - 1);
   next.turn.fishDrawAvailable = false;
   next.version += 1;

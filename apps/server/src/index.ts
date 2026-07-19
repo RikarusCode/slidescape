@@ -4,7 +4,7 @@ import rateLimit from "@fastify/rate-limit";
 import { Server } from "socket.io";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
-import type { ClientCommand, GameMode, TurnTimerSeconds } from "@slidescape/game";
+import type { ClientCommand, GameMode, PlayerColor, TurnTimerSeconds } from "@slidescape/game";
 import { RoomManager, type Member } from "./rooms.js";
 import { createStore } from "./store.js";
 
@@ -40,6 +40,7 @@ io.on("connection", (socket) => {
       socket.emit("lobby-state", rooms.publicLobby(restored.room));
       if (restored.room.game) socket.emit("game-state", restored.room.game);
     }
+    else socket.emit("session-reset", "Your previous match is no longer available. You can start a new game.");
   }
   member ??= rooms.guest(auth.name ?? "Penguin Player", socket.id);
   socket.emit("session", { playerId: member.id, reconnectToken: member.reconnectToken });
@@ -86,10 +87,24 @@ io.on("connection", (socket) => {
     const room = rooms.roomFor(member!.id);
     if (room) await rooms.setReady(room, member!.id, ready);
   });
+  socket.on("select-color", (payload: { color?: PlayerColor }, reply) => {
+    const room = rooms.roomFor(member!.id);
+    if (!room) return reply?.({ ok: false, message: "Join a private room first." });
+    try { rooms.setColor(room, member!.id, payload.color); reply?.({ ok: true }); }
+    catch (error) { reply?.({ ok: false, message: error instanceof Error ? error.message : "Could not choose that color." }); }
+  });
   socket.on("leave-lobby", async (reply) => {
     const roomId = rooms.leaveLobby(member!.id);
     if (roomId) await socket.leave(roomId);
     reply?.({ ok: true });
+  });
+  socket.on("leave-game", async (reply) => {
+    try {
+      const roomId = await rooms.leaveGame(member!.id);
+      if (!roomId) return reply?.({ ok: false, message: "You are not in an active game." });
+      await socket.leave(roomId);
+      reply?.({ ok: true });
+    } catch (error) { reply?.({ ok: false, message: error instanceof Error ? error.message : "Could not leave the game." }); }
   });
   socket.on("command", async (command: ClientCommand, reply) => {
     const room = rooms.roomFor(member!.id);

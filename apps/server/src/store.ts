@@ -19,7 +19,9 @@ class RedisStore implements GameStore {
   }
   async load(id: string) {
     const value = await this.redis.get(`slidescape:game:${id}`);
-    return value ? JSON.parse(value) as GameState : undefined;
+    if (!value) return undefined;
+    const state = JSON.parse(value) as Partial<GameState>;
+    return state.schemaVersion === 3 ? state as GameState : undefined;
   }
 }
 

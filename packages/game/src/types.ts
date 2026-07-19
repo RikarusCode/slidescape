@@ -1,8 +1,9 @@
-export const BOARD_SIZE = 17;
+export const BOARD_SIZE = 14;
 
 export type GameMode = "quick-2" | "strategic-2" | "classic-4";
 export type TurnTimerSeconds = 0 | 45 | 90 | 180;
 export type Color = "green" | "yellow" | "red" | "blue";
+export type PlayerColor = "arctic-teal" | "sunburst" | "coral-red" | "cobalt-blue" | "aurora-purple" | "berry-pink" | "lime-green";
 export type Direction = "up" | "right" | "down" | "left";
 export type PieceKind = "pig" | "hay" | "cow";
 export type GameStatus = "playing" | "finished";
@@ -29,6 +30,7 @@ export interface Piece {
   color?: Color;
   ownerId?: string;
   position: Position;
+  facing?: Direction;
   scored?: boolean;
 }
 
@@ -44,6 +46,7 @@ export interface PlayerState {
   id: string;
   name: string;
   colors: Color[];
+  themeColor: PlayerColor;
   score: number;
   connected: boolean;
   harvestCard?: HarvestCardId;
@@ -65,7 +68,7 @@ export interface TurnState {
 }
 
 export interface GameState {
-  schemaVersion: 1;
+  schemaVersion: 3;
   id: string;
   mode: GameMode;
   status: GameStatus;
@@ -83,6 +86,8 @@ export interface GameState {
   winnerId?: string;
   log: string[];
 }
+
+export interface GameGuest { id: string; name: string; colorChoice?: PlayerColor }
 
 export interface CardDefinition<T extends string = string> {
   id: T;

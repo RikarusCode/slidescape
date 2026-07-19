@@ -6,13 +6,15 @@ import {
   endTurn,
   legalMoves,
   move,
+  PLAYER_COLOR_ORDER,
   placeCowAndPoop,
   playHarvest,
   roll,
   type ClientCommand,
   type GameMode,
   type GameState,
-  type LobbySettings
+  type LobbySettings,
+  type PlayerColor
 } from "@slidescape/game";
 import type { GameStore } from "./store.js";
 
@@ -27,6 +29,7 @@ export interface Member {
   ready: boolean;
   connected: boolean;
   isBot?: boolean;
+  colorChoice?: PlayerColor;
 }
 
 export interface Room {
@@ -44,6 +47,7 @@ function roomCode() {
   const bytes = randomBytes(6);
   return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join("");
 }
+const gameSeed = () => randomBytes(4).readUInt32BE(0);
 
 export class RoomManager {
   private readonly rooms = new Map<string, Room>();
@@ -90,7 +94,7 @@ export class RoomManager {
 
   queue(member: Member, mode: GameMode): Room | undefined {
     const queue = this.queues.get(mode) ?? [];
-    queue.push(member);
+    if (!queue.some((candidate) => candidate.id === member.id)) queue.push(member);
     this.queues.set(mode, queue);
     if (queue.length < playerCount(mode)) return undefined;
     const members = queue.splice(0, playerCount(mode));
@@ -103,7 +107,7 @@ export class RoomManager {
     return room;
   }
 
-  async createBotGame(member: Member, mode: GameMode): Promise<Room> {
+  async createBotGame(member: Member, mode: GameMode, seed = gameSeed()): Promise<Room> {
     const bots = Array.from({ length: playerCount(mode) - 1 }, (_, index) => ({
       ...this.guest(playerCount(mode) === 2 ? "Testing Bot" : `Testing Bot ${index + 1}`, `bot-${randomUUID()}`),
       isBot: true
@@ -113,10 +117,11 @@ export class RoomManager {
       id: randomUUID(), hostId: member.id,
       settings: { mode, privacy: "random", turnTimerSeconds: 0 }, members, processed: new Set()
     };
-    room.game = createGame(room.id, mode, members.map(({ id, name }) => ({ id, name })));
+    room.game = createGame(room.id, mode, members.map(({ id, name, colorChoice }) => ({ id, name, colorChoice })), seed);
     this.rooms.set(room.id, room);
     members.forEach((candidate) => this.memberRoom.set(candidate.id, room.id));
     await this.store.save(room.game);
+    await this.runBotTurns(room);
     return room;
   }
 
@@ -157,12 +162,23 @@ export class RoomManager {
 
   emitLobby(room: Room) { this.io.to(room.id).emit("lobby-state", this.publicLobby(room)); }
 
+  setColor(room: Room, memberId: string, colorChoice?: PlayerColor) {
+    if (room.settings.privacy !== "private" || room.game) throw new Error("Colors can only be chosen before a private game begins.");
+    if (colorChoice && !PLAYER_COLOR_ORDER.includes(colorChoice)) throw new Error("Choose a valid player color.");
+    if (colorChoice && room.members.some((member) => member.id !== memberId && member.colorChoice === colorChoice)) throw new Error("That color has already been claimed.");
+    const member = room.members.find((candidate) => candidate.id === memberId);
+    if (!member) throw new Error("You are not in this room.");
+    member.colorChoice = colorChoice;
+    member.ready = false;
+    this.emitLobby(room);
+  }
+
   async setReady(room: Room, memberId: string, ready: boolean) {
     const member = room.members.find((candidate) => candidate.id === memberId);
     if (!member || room.game) return;
     member.ready = ready;
     if (room.members.length === playerCount(room.settings.mode) && room.members.every((candidate) => candidate.ready)) {
-      room.game = createGame(room.id, room.settings.mode, room.members.map(({ id, name }) => ({ id, name })));
+      room.game = createGame(room.id, room.settings.mode, room.members.map(({ id, name, colorChoice }) => ({ id, name, colorChoice })), gameSeed());
       await this.store.save(room.game);
       this.armTimer(room);
       this.io.to(room.id).emit("game-state", room.game);
@@ -215,6 +231,37 @@ export class RoomManager {
     room.game?.players.forEach((player) => { if (player.id === memberId) player.connected = false; });
     this.emitLobby(room);
     setTimeout(() => this.forfeitDisconnected(room.id, memberId), 120_000).unref();
+  }
+
+  async leaveGame(memberId: string) {
+    const room = this.roomFor(memberId);
+    if (!room?.game || room.game.status === "finished") return undefined;
+    const game = room.game;
+    if (room.timeout) clearTimeout(room.timeout);
+
+    if (room.settings.mode !== "classic-4") {
+      game.status = "finished";
+      game.winnerId = game.players.find((player) => player.id !== memberId)?.id;
+    } else {
+      const leavingIndex = game.turnOrder.indexOf(memberId);
+      game.pieces = game.pieces.filter((piece) => piece.ownerId !== memberId);
+      game.turnOrder = game.turnOrder.filter((id) => id !== memberId);
+      if (game.turn.activePlayerId === memberId && game.turnOrder.length > 0) {
+        game.turn.activePlayerId = game.turnOrder[Math.max(0, leavingIndex) % game.turnOrder.length]!;
+      }
+      if (game.turnOrder.length === 1) {
+        game.status = "finished";
+        game.winnerId = game.turnOrder[0];
+      }
+    }
+
+    game.version += 1;
+    room.members = room.members.filter((candidate) => candidate.id !== memberId);
+    this.memberRoom.delete(memberId);
+    await this.store.save(game);
+    this.io.to(room.id).emit(game.status === "finished" ? "game-over" : "game-state", game);
+    if (game.status === "playing") this.armTimer(room);
+    return room.id;
   }
 
   private async forfeitDisconnected(roomId: string, memberId: string) {
