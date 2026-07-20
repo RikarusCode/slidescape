@@ -62,9 +62,32 @@ export interface TurnState {
   harvestForbidden?: boolean;
   movesRemaining: number;
   pendingPoop: PoopCardId[];
+  pendingChoice?: PendingCardChoice;
+  forcedPieceOwnerIds?: string[];
   fishDrawAvailable?: boolean;
   walrusRelocationsRemaining?: number;
   timerDeadline?: number;
+}
+
+export interface ReturnPenguinOption {
+  pieceId: string;
+  color: Color;
+  positions: Position[];
+}
+
+export interface PendingCardChoice {
+  type: "return-penguin";
+  playerId: string;
+  cardId: "return-pig";
+  options: ReturnPenguinOption[];
+}
+
+export interface CardReveal {
+  id: number;
+  deck: "poop";
+  cardId: PoopCardId;
+  playerId: string;
+  turnNumber: number;
 }
 
 export interface GameState {
@@ -85,6 +108,8 @@ export interface GameState {
   turn: TurnState;
   winnerId?: string;
   log: string[];
+  cardRevealSequence?: number;
+  cardReveals?: CardReveal[];
 }
 
 export interface GameGuest { id: string; name: string; colorChoice?: PlayerColor }
@@ -128,6 +153,7 @@ export type ClientCommand =
   | { type: "move"; commandId: string; expectedVersion: number; move: LegalMove }
   | { type: "place-cow"; commandId: string; expectedVersion: number; to: Position; leavePoop?: boolean; poopFrom?: Position }
   | { type: "play-harvest"; commandId: string; expectedVersion: number; play: HarvestPlay }
+  | { type: "resolve-poop-choice"; commandId: string; expectedVersion: number; pieceId: string; to: Position }
   | { type: "end-turn"; commandId: string; expectedVersion: number };
 
 export type ServerEvent =

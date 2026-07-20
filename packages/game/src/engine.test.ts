@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_SIZE, HARVEST_CARDS, POOP_CARDS, STARTING_POSITIONS, createGame, drawHarvest, endTurn, legalMoves, move, placeCowAndPoop, playHarvest, roll } from "./index.js";
+import { BOARD_SIZE, HARVEST_CARDS, POOP_CARDS, STARTING_POSITIONS, createGame, drawHarvest, endTurn, legalMoves, move, placeCowAndPoop, playHarvest, resolvePoopChoice, roll } from "./index.js";
 
 const guests = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `p${index + 1}`, name: `Player ${index + 1}` }));
 
@@ -58,6 +58,15 @@ describe("Slidescape setup", () => {
 });
 
 describe("movement", () => {
+  it("never exposes legal board moves to a player who is not active", () => {
+    const state = createGame("inactive-player", "quick-2", guests(2), 5);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.rolled = 4;
+    state.turn.movesRemaining = 4;
+    expect(legalMoves(state, "p2")).toEqual([]);
+  });
+
   it("slides a pig until the square before a blocker", () => {
     const state = createGame("slide", "quick-2", guests(2), 7);
     state.turn.activePlayerId = "p1";
@@ -79,6 +88,23 @@ describe("movement", () => {
     state.turn.movesRemaining = 3;
     const moves = legalMoves(state, "p1").filter((entry) => entry.pieceId === "green-hay-1");
     expect(moves.every((entry) => Math.abs(entry.to.x - 5) + Math.abs(entry.to.y - 1) === 1)).toBe(true);
+  });
+
+  it("reveals a Poop card to every client state when hay crosses poop", () => {
+    const state = createGame("hay-poop", "quick-2", guests(2), 11);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.rolled = 3;
+    state.turn.movesRemaining = 3;
+    state.poop = [{ x: 5, y: 2 }];
+    state.poopSupply = 7;
+    state.poopDeck = ["skip-turn", ...state.poopDeck.filter((card) => card !== "skip-turn"), "skip-turn"];
+    const candidate = legalMoves(state, "p1").find((entry) => entry.pieceId === "green-hay-1" && entry.direction === "down")!;
+    const next = move(state, "p1", candidate);
+    expect(next.turn.pendingPoop).toEqual(["skip-turn"]);
+    expect(next.cardReveals?.at(-1)).toMatchObject({ cardId: "skip-turn", playerId: "p1" });
+    expect(next.poop).toHaveLength(0);
+    expect(next.poopSupply).toBe(8);
   });
 
   it("keeps the walrus locked until a roll of one frees it", () => {
@@ -240,6 +266,21 @@ describe("turns and Harvest cards", () => {
     expect(drawn.turn.activePlayerId).toBe("p2");
   });
 
+  it("uses an avoid Fish card to cancel the oldest pending Poop consequence", () => {
+    const state = createGame("avoid-pending-poop", "quick-2", guests(2), 28);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.rolled = 3;
+    state.turn.movesRemaining = 1;
+    state.turn.pendingPoop = ["skip-turn", "return-pig"];
+    state.players[0]!.harvestCard = "avoid-or-two";
+    state.players[0]!.harvestDrawnTurn = 0;
+    const next = playHarvest(state, "p1", { cardId: "avoid-or-two", choice: "avoid" });
+    expect(next.turn.pendingPoop).toEqual(["return-pig"]);
+    expect(next.players[0]!.harvestCard).toBeUndefined();
+    expect(next.players[0]!.effects.avoidPoopCharges).toBe(0);
+  });
+
   it("resolves winning-slide poop before declaring a winner", () => {
     const state = createGame("poop-before-win", "quick-2", guests(2), 23);
     state.turn.activePlayerId = "p1";
@@ -254,8 +295,45 @@ describe("turns and Harvest cards", () => {
     state.poopDeck = ["return-pig", ...state.poopDeck.filter((card) => card !== "return-pig"), "return-pig"];
     const winningMove = legalMoves(state, "p1").find((candidate) => candidate.pieceId === penguin.id && candidate.direction === "down" && candidate.scores)!;
     const moved = move(state, "p1", winningMove);
-    const resolved = endTurn(moved, "p1");
+    const awaitingChoice = endTurn(moved, "p1");
+    const option = awaitingChoice.turn.pendingChoice!.options[0]!;
+    const resolved = resolvePoopChoice(awaitingChoice, "p1", option.pieceId, option.positions[0]!);
     expect(resolved.status).toBe("playing");
     expect(resolved.players[0]!.score).toBe(3);
+  });
+
+  it("lets the affected player choose an escaped penguin and an open original start", () => {
+    const state = createGame("return-choice", "quick-2", guests(2), 24);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.movesRemaining = 0;
+    state.turn.pendingPoop = ["return-pig"];
+    const penguin = state.pieces.find((piece) => piece.id === "green-pig-1")!;
+    penguin.scored = true;
+    penguin.position = { x: -1, y: -1 };
+    state.players[0]!.score = 1;
+    const awaitingChoice = endTurn(state, "p1");
+    expect(awaitingChoice.turn.pendingChoice?.type).toBe("return-penguin");
+    const option = awaitingChoice.turn.pendingChoice!.options[0]!;
+    const next = resolvePoopChoice(awaitingChoice, "p1", option.pieceId, option.positions[0]!);
+    expect(next.players[0]!.score).toBe(0);
+    expect(next.pieces.find((piece) => piece.id === option.pieceId)).toMatchObject({ scored: false, position: option.positions[0] });
+    expect(next.turn.activePlayerId).toBe("p2");
+  });
+
+  it("makes the next player move the affected player's piece before rolling", () => {
+    const state = createGame("forced-owner", "quick-2", guests(2), 25);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.movesRemaining = 0;
+    state.turn.pendingPoop = ["opponent-moves"];
+    const next = endTurn(state, "p1");
+    expect(next.turn.activePlayerId).toBe("p2");
+    expect(next.turn.forcedPieceOwnerIds).toEqual(["p1"]);
+    const forcedMoves = legalMoves(next, "p2");
+    expect(forcedMoves.length).toBeGreaterThan(0);
+    expect(forcedMoves.every((candidate) => next.pieces.find((piece) => piece.id === candidate.pieceId)?.ownerId === "p1")).toBe(true);
+    const moved = move(next, "p2", forcedMoves[0]!);
+    expect(moved.turn.forcedPieceOwnerIds).toEqual([]);
   });
 });

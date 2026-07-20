@@ -1,7 +1,7 @@
-import { endTurn, legalMoves, move, roll } from "./engine.js";
+import { endTurn, legalMoves, move, resolvePoopChoice, roll } from "./engine.js";
 import type { GameState } from "./types.js";
 
-export type BotActionKind = "roll" | "move" | "end-turn";
+export type BotActionKind = "roll" | "move" | "choice" | "end-turn";
 
 export interface BotActionResult {
   state: GameState;
@@ -14,7 +14,13 @@ export function advanceBotAction(state: GameState, actorId: string): BotActionRe
     throw new Error("The bot is not the active player.");
   }
 
-  if (state.turn.phase === "awaiting-roll" && active.effects.forcedOpponentMoves > 0) {
+  if (state.turn.pendingChoice) {
+    const option = state.turn.pendingChoice.options[state.seed % state.turn.pendingChoice.options.length]!;
+    const position = option.positions[state.seed % option.positions.length]!;
+    return { state: resolvePoopChoice(state, actorId, option.pieceId, position), kind: "choice" };
+  }
+
+  if (state.turn.phase === "awaiting-roll" && state.turn.forcedPieceOwnerIds?.length) {
     const moves = legalMoves(state, actorId);
     if (moves.length > 0) {
       return { state: move(state, actorId, moves[state.seed % moves.length]!), kind: "move" };

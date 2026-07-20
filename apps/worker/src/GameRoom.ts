@@ -9,6 +9,7 @@ import {
   PLAYER_COLOR_ORDER,
   placeCowAndPoop,
   playHarvest,
+  resolvePoopChoice,
   roll,
   type ClientCommand,
   type GameMode,
@@ -233,6 +234,7 @@ export class GameRoom extends DurableObject<Env> {
     else if (command.type === "move") next = move(next, actorId, command.move);
     else if (command.type === "place-cow") next = placeCowAndPoop(next, actorId, command.to, { leavePoop: command.leavePoop, poopFrom: command.poopFrom });
     else if (command.type === "play-harvest") next = playHarvest(next, actorId, command.play);
+    else if (command.type === "resolve-poop-choice") next = resolvePoopChoice(next, actorId, command.pieceId, command.to);
     else if (command.type === "end-turn") next = endTurn(next, actorId);
     else throw new Error("Unknown game command.");
     room.game = next;
@@ -267,7 +269,18 @@ export class GameRoom extends DurableObject<Env> {
     if (!state || state.status !== "playing") return;
     const actor = state.turn.activePlayerId;
     let guard = 96;
-    while (state.turn.phase === "awaiting-roll" && state.players.find((player) => player.id === actor)!.effects.forcedOpponentMoves > 0 && guard-- > 0) {
+    if (state.turn.pendingChoice) {
+      while (state.turn.pendingChoice && guard-- > 0) {
+        const option = state.turn.pendingChoice.options[state.seed % state.turn.pendingChoice.options.length]!;
+        const position = option.positions[state.seed % option.positions.length]!;
+        state = resolvePoopChoice(state, actor, option.pieceId, position);
+      }
+      room.game = state;
+      this.scheduleBotAction(room);
+      this.resetTurnDeadline(room);
+      return;
+    }
+    while (state.turn.phase === "awaiting-roll" && state.turn.forcedPieceOwnerIds?.length && guard-- > 0) {
       const moves = legalMoves(state, actor);
       if (!moves.length) break;
       state = move(state, actor, moves[(state.seed + guard) % moves.length]!);
@@ -279,6 +292,11 @@ export class GameRoom extends DurableObject<Env> {
       state = move(state, actor, moves[(state.seed + guard) % moves.length]!);
     }
     state = endTurn(state, actor);
+    while (state.turn.pendingChoice && guard-- > 0) {
+      const option = state.turn.pendingChoice.options[state.seed % state.turn.pendingChoice.options.length]!;
+      const position = option.positions[state.seed % option.positions.length]!;
+      state = resolvePoopChoice(state, actor, option.pieceId, position);
+    }
     room.game = state;
     this.scheduleBotAction(room);
     this.resetTurnDeadline(room);

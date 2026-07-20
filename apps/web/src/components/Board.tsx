@@ -33,17 +33,21 @@ function PieceGlyph({ piece, selected, color, walrusFacing }: { piece: Piece; se
   return <g aria-label={`${piece.color} penguin`}><PenguinGlyph color={color} facing={piece.facing ?? startingFacing(piece.color)} selected={selected}/></g>;
 }
 
-function AnimatedPiece({ piece, selected, selectable, fenceActive, color, walrusFacing, positionOverride, onSelect }: { piece: Piece; selected: boolean; selectable: boolean; fenceActive: boolean; color: string; walrusFacing?: Direction; positionOverride?: Position; onSelect: (pieceId: string) => void }) {
+function AnimatedPiece({ piece, selected, selectable, fenceActive, color, walrusFacing, positionOverride, facingOverride, onSelect }: { piece: Piece; selected: boolean; selectable: boolean; fenceActive: boolean; color: string; walrusFacing?: Direction; positionOverride?: Position; facingOverride?: Direction; onSelect: (pieceId: string) => void }) {
   const visualPosition = piece.kind === "cow" && fenceActive ? { x: 6.5, y: 6.5 } : positionOverride ?? piece.position;
+  const visualFacing = facingOverride ?? walrusFacing ?? piece.facing;
   const node = useRef<SVGGElement>(null);
   const previous = useRef({ ...visualPosition });
+  const previousFacing = useRef(visualFacing);
   const [reducedMotion] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   useLayoutEffect(() => {
     const element = node.current;
     const from = previous.current;
     const to = { ...visualPosition };
+    const turnsBeforeMoving = previousFacing.current !== visualFacing;
     previous.current = to;
+    previousFacing.current = visualFacing;
     if (!element) return;
     const destination = `translate(${to.x} ${to.y})`;
     if (from.x === to.x && from.y === to.y) {
@@ -65,18 +69,19 @@ function AnimatedPiece({ piece, selected, selectable, fenceActive, color, walrus
       if (progress < 1) frame = requestAnimationFrame(animate);
       else element.setAttribute("transform", destination);
     };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [visualPosition.x, visualPosition.y, reducedMotion]);
+    const turnDelay = turnsBeforeMoving && !reducedMotion ? 160 : 0;
+    const timer = window.setTimeout(() => { frame = requestAnimationFrame(animate); }, turnDelay);
+    return () => { window.clearTimeout(timer); cancelAnimationFrame(frame); };
+  }, [visualPosition.x, visualPosition.y, visualFacing, reducedMotion]);
 
   return <g
     ref={node}
     data-piece-id={piece.id}
     transform={`translate(${visualPosition.x} ${visualPosition.y})`}
-    onClick={piece.kind === "cow" && fenceActive ? undefined : () => onSelect(piece.id)}
+    onClick={selectable && !(piece.kind === "cow" && fenceActive) ? () => onSelect(piece.id) : undefined}
     className={`board-piece ${selectable ? "selectable" : ""}`.trim()}
   >
-    <PieceGlyph piece={piece} selected={selected} color={color} walrusFacing={walrusFacing}/>
+    <PieceGlyph piece={{ ...piece, facing: visualFacing }} selected={selected} color={color}/>
   </g>;
 }
 
@@ -96,13 +101,14 @@ interface BoardProps {
   onSelect: (pieceId: string) => void;
   onMove: (move: LegalMove) => void;
   specialMoves?: LegalMove[];
+  specialSelectableIds?: string[];
   onEmptyCell?: (position: Position) => void;
   onPoopSelect?: (position: Position) => void;
   selectedPoop?: Position;
 }
 
-export const Board = memo(function Board({ state, playerId, selectedId, onSelect, onMove, specialMoves, onEmptyCell, onPoopSelect, selectedPoop }: BoardProps) {
-  const [optimisticMove, setOptimisticMove] = useState<{ pieceId: string; to: Position }>();
+export const Board = memo(function Board({ state, playerId, selectedId, onSelect, onMove, specialMoves, specialSelectableIds, onEmptyCell, onPoopSelect, selectedPoop }: BoardProps) {
+  const [optimisticMove, setOptimisticMove] = useState<{ pieceId: string; to: Position; direction: Direction }>();
   const viewer = state.players.find((player) => player.id === playerId);
   const rotation = rotationFor(viewer?.colors[0]);
   const available = useMemo(() => legalMoves(state, playerId), [state, playerId]);
@@ -133,7 +139,7 @@ export const Board = memo(function Board({ state, playerId, selectedId, onSelect
   }, [state.version, optimisticMove]);
 
   const submitMove = (requested: LegalMove) => {
-    if (!requested.scores) setOptimisticMove({ pieceId: requested.pieceId, to: { ...requested.to } });
+    if (!requested.scores) setOptimisticMove({ pieceId: requested.pieceId, to: { ...requested.to }, direction: requested.direction });
     onMove(requested);
   };
 
@@ -176,11 +182,12 @@ export const Board = memo(function Board({ state, playerId, selectedId, onSelect
           key={piece.id}
           piece={piece}
           selected={piece.id === selectedId}
-          selectable={available.some((move) => move.pieceId === piece.id)}
+          selectable={specialSelectableIds ? specialSelectableIds.includes(piece.id) : available.some((move) => move.pieceId === piece.id)}
           fenceActive={state.fenceActive}
           color={piece.ownerId ? PLAYER_COLOR_HEX[playerById.get(piece.ownerId)!.themeColor] : "#ffffff"}
           walrusFacing={piece.kind === "cow" && state.fenceActive ? startingFacing(viewer?.colors[0]) : undefined}
           positionOverride={optimisticMove?.pieceId === piece.id ? optimisticMove.to : undefined}
+          facingOverride={optimisticMove?.pieceId === piece.id ? optimisticMove.direction : undefined}
           onSelect={onSelect}
         />)}
         {directionControls.map(({ move, position }) => <g

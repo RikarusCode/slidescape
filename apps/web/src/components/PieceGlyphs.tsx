@@ -5,7 +5,7 @@ const rotation: Record<Direction, number> = { up: 0, right: 90, down: 180, left:
 export function PenguinGlyph({ color, facing = "up", selected = false }: { color: string; facing?: Direction; selected?: boolean }) {
   return <g className="piece penguin-piece">
     {selected ? <circle cx=".5" cy=".5" r=".45" fill="none" stroke="#ff7145" strokeWidth=".09"/> : null}
-    <g transform={`rotate(${rotation[facing]} .5 .5)`}>
+    <g className="piece-facing" style={{ transform: `rotate(${rotation[facing]}deg)` }}>
       <circle cx=".5" cy=".51" r=".355" fill="#071a33" stroke="#05264b" strokeWidth=".055"/>
       <ellipse cx=".5" cy=".39" rx=".245" ry=".205" fill="#fbfeff"/>
       <circle cx=".415" cy=".36" r=".045" fill="#071a33"/><circle cx=".585" cy=".36" r=".045" fill="#071a33"/>
@@ -28,7 +28,7 @@ export function IceBlockGlyph({ color }: { color: string }) {
 }
 
 export function WalrusGlyph({ facing = "down" }: { facing?: Direction }) {
-  return <g className="piece walrus-piece" transform={`rotate(${rotation[facing]} .5 .5)`}>
+  return <g className="piece piece-facing walrus-piece" style={{ transform: `rotate(${rotation[facing]}deg)` }}>
     <circle cx=".5" cy=".51" r=".35" fill="#9aabba" stroke="#0b315d" strokeWidth=".06"/>
     <ellipse cx=".5" cy=".36" rx=".24" ry=".18" fill="#c5d0d8"/>
     <circle cx=".415" cy=".34" r=".035" fill="#071a33"/><circle cx=".585" cy=".34" r=".035" fill="#071a33"/>

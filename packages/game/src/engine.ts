@@ -216,20 +216,21 @@ function goalAccess(state: GameState, player: PlayerState): boolean {
 function moveActorAllowed(state: GameState, piece: Piece, actorId: string): boolean {
   if (piece.kind === "cow") return !state.fenceActive;
   if (piece.ownerId === actorId) return true;
-  const active = activePlayer(state);
-  return active.effects.forcedOpponentMoves > 0 && piece.ownerId !== actorId;
+  return state.turn.forcedPieceOwnerIds?.[0] === piece.ownerId;
 }
 
 export function legalMoves(state: GameState, actorId = state.turn.activePlayerId): LegalMove[] {
   if (state.status !== "playing") return [];
   const active = activePlayer(state);
-  const preRollOpponentMove = state.turn.phase === "awaiting-roll" && active.effects.forcedOpponentMoves > 0;
+  if (active.id !== actorId) return [];
+  const forcedPieceOwnerId = state.turn.forcedPieceOwnerIds?.[0];
+  const preRollOpponentMove = state.turn.phase === "awaiting-roll" && Boolean(forcedPieceOwnerId);
   if (state.turn.phase !== "moving" && !preRollOpponentMove) return [];
   if (!preRollOpponentMove && state.turn.movesRemaining <= 0) return [];
   const moves: LegalMove[] = [];
   for (const piece of state.pieces) {
     if (piece.scored || !moveActorAllowed(state, piece, actorId)) continue;
-    if (preRollOpponentMove && (piece.ownerId === actorId || piece.kind === "cow")) continue;
+    if (preRollOpponentMove && (piece.ownerId !== forcedPieceOwnerId || piece.kind === "cow")) continue;
     for (const direction of DIRECTIONS) {
       const move = piece.kind === "pig" ? pigMove(state, piece, direction, active.effects.flyoverCharges > 0) : stepMove(state, piece, direction);
       if (!move) continue;
@@ -257,7 +258,17 @@ export function legalMovesForPiece(state: GameState, pieceId: string): LegalMove
 function drawPoop(state: GameState): void {
   if (state.poopDeck.length === 0) state.poopDeck = expandedPoopDeck();
   const card = state.poopDeck.shift();
-  if (card) state.turn.pendingPoop.push(card);
+  if (card) {
+    state.turn.pendingPoop.push(card);
+    state.cardRevealSequence = (state.cardRevealSequence ?? 0) + 1;
+    state.cardReveals = [...(state.cardReveals ?? []), {
+      id: state.cardRevealSequence,
+      deck: "poop" as const,
+      cardId: card,
+      playerId: state.turn.activePlayerId,
+      turnNumber: state.turn.number
+    }].slice(-24);
+  }
 }
 
 function applyMoveUnchecked(state: GameState, move: LegalMove, triggerPoop = true): void {
@@ -286,7 +297,7 @@ export function roll(state: GameState, actorId: string): GameState {
   const next = structuredClone(state);
   if (next.status !== "playing" || next.turn.activePlayerId !== actorId || next.turn.phase !== "awaiting-roll") throw new Error("You cannot roll now.");
   const player = activePlayer(next);
-  if (player.effects.forcedOpponentMoves > 0) throw new Error("Move an opponent-controlled piece before rolling.");
+  if (next.turn.forcedPieceOwnerIds?.length) throw new Error("Move the affected player's piece before rolling.");
   const [value, seed] = nextRandom(next.seed);
   next.seed = seed;
   const forcedTwo = player.effects.forcedTwoMoveTurns > 0;
@@ -327,7 +338,7 @@ export function move(state: GameState, actorId: string, requested: LegalMove): G
   if (!candidate) throw new Error("That move is not legal.");
   const preRoll = next.turn.phase === "awaiting-roll";
   applyMoveUnchecked(next, candidate);
-  if (preRoll) activePlayer(next).effects.forcedOpponentMoves -= 1;
+  if (preRoll) next.turn.forcedPieceOwnerIds = next.turn.forcedPieceOwnerIds?.slice(1);
   else {
     next.turn.movesRemaining = Math.max(0, next.turn.movesRemaining - 1);
     next.turn.fishDrawAvailable = false;
@@ -353,7 +364,11 @@ export function playHarvest(state: GameState, actorId: string, play: HarvestPlay
   if (player.harvestDrawnTurn === next.turn.number) throw new Error("A Harvest card cannot be used on the turn it was drawn.");
   if (play.cardId === "flyover") player.effects.flyoverCharges += 1;
   if (play.cardId === "avoid-or-two") {
-    if (play.choice === "avoid") player.effects.avoidPoopCharges += 1;
+    if (play.choice === "avoid") {
+      const avoided = next.turn.pendingPoop.shift();
+      if (avoided) returnPoopCard(next, avoided);
+      else player.effects.avoidPoopCharges += 1;
+    }
     else next.turn.movesRemaining += 2;
   }
   if (play.cardId === "double-roll") {
@@ -371,7 +386,10 @@ export function playHarvest(state: GameState, actorId: string, play: HarvestPlay
       player.harvestDrawnTurn = target.harvestDrawnTurn;
       target.harvestCard = undefined;
       target.harvestDrawnTurn = undefined;
-      if (own) next.harvestDeck.push(own);
+      if (own) {
+        next.harvestDeck.push(own);
+        [next.harvestDeck, next.seed] = shuffle(next.harvestDeck, next.seed);
+      }
     }
   }
   if (play.cardId === "move-opponent") {
@@ -401,59 +419,103 @@ export function playHarvest(state: GameState, actorId: string, play: HarvestPlay
   return next;
 }
 
-function resolvePoop(state: GameState, player: PlayerState): void {
-  for (const card of state.turn.pendingPoop) {
+function returnPoopCard(state: GameState, card: GameState["turn"]["pendingPoop"][number]): void {
+  state.poopDeck.push(card);
+  [state.poopDeck, state.seed] = shuffle(state.poopDeck, state.seed);
+}
+
+function returnPenguinOptions(state: GameState, player: PlayerState) {
+  const blocked = occupied(state);
+  return state.pieces.flatMap((piece) => {
+    if (piece.kind !== "pig" || piece.ownerId !== player.id || !piece.scored || !piece.color) return [];
+    const positions = STARTING_POSITIONS[piece.color].filter((position) => !blocked.has(key(position))).map((position) => ({ ...position }));
+    return positions.length ? [{ pieceId: piece.id, color: piece.color, positions }] : [];
+  });
+}
+
+function resolvePoopUntilChoice(state: GameState, player: PlayerState): boolean {
+  while (state.turn.pendingPoop.length > 0) {
+    const card = state.turn.pendingPoop.shift()!;
     if (card === "skip-turn") player.effects.skipTurns += 1;
     if (card === "two-move-turn") player.effects.forcedTwoMoveTurns += 1;
-    if (card === "opponent-moves") player.effects.forcedOpponentMoves += 1;
+    if (card === "opponent-moves") state.turn.forcedPieceOwnerIds = [...(state.turn.forcedPieceOwnerIds ?? []), player.id];
     if (card === "discard-harvest") returnHarvest(state, player);
     if (card === "return-pig") {
-      const scored = state.pieces.find((piece) => piece.kind === "pig" && piece.ownerId === player.id && piece.scored);
-      if (scored?.color) {
-        const blocked = occupied(state);
-        const start = STARTING_POSITIONS[scored.color].find((position) => !blocked.has(key(position)));
-        if (start) {
-          scored.scored = false;
-          scored.position = { ...start };
-          player.score = Math.max(0, player.score - 1);
-        }
+      const options = returnPenguinOptions(state, player);
+      if (options.length > 0) {
+        state.turn.pendingChoice = { type: "return-penguin", playerId: player.id, cardId: card, options };
+        return false;
       }
     }
-    state.poopDeck.push(card);
-    [state.poopDeck, state.seed] = shuffle(state.poopDeck, state.seed);
+    returnPoopCard(state, card);
   }
-  state.turn.pendingPoop = [];
+  return true;
 }
 
 function nextTurn(state: GameState): void {
+  let forcedPieceOwnerIds = state.turn.forcedPieceOwnerIds;
   let index = state.turnOrder.indexOf(state.turn.activePlayerId);
   do {
     index = (index + 1) % state.turnOrder.length;
     const player = state.players.find((candidate) => candidate.id === state.turnOrder[index])!;
-    state.turn = { number: state.turn.number + 1, activePlayerId: player.id, phase: "awaiting-roll", movesRemaining: 0, pendingPoop: [] };
+    state.turn = {
+      number: state.turn.number + 1,
+      activePlayerId: player.id,
+      phase: "awaiting-roll",
+      movesRemaining: 0,
+      pendingPoop: [],
+      forcedPieceOwnerIds
+    };
     if (player.effects.skipTurns > 0) {
       player.effects.skipTurns -= 1;
       if (player.effects.forcedTwoMoveTurns > 0) player.effects.forcedTwoMoveTurns -= 1;
       state.log.push(`${player.name} misses this turn.`);
+      delete state.turn.forcedPieceOwnerIds;
+      forcedPieceOwnerIds = undefined;
       continue;
     }
     break;
   } while (true);
 }
 
+function finishTurnAfterPoop(state: GameState, player: PlayerState): void {
+  if (player.score >= SCORE_TARGET[state.mode]) {
+    state.status = "finished";
+    state.winnerId = player.id;
+    state.log.push(`${player.name} wins!`);
+  } else nextTurn(state);
+}
+
 export function endTurn(state: GameState, actorId: string): GameState {
   const next = structuredClone(state);
   const player = activePlayer(next);
   if (player.id !== actorId) throw new Error("It is not your turn.");
+  if (next.turn.phase === "resolving-poop" || next.turn.pendingChoice) throw new Error("Resolve the pending Poop card first.");
   if (next.turn.movesRemaining > 0 && legalMoves(next, actorId).length > 0) throw new Error("Use every available move before ending the turn.");
   next.turn.phase = "resolving-poop";
-  resolvePoop(next, player);
-  if (player.score >= SCORE_TARGET[next.mode]) {
-    next.status = "finished";
-    next.winnerId = player.id;
-    next.log.push(`${player.name} wins!`);
-  } else nextTurn(next);
+  if (resolvePoopUntilChoice(next, player)) finishTurnAfterPoop(next, player);
   next.version += 1;
+  return next;
+}
+
+export function resolvePoopChoice(state: GameState, actorId: string, pieceId: string, to: Position): GameState {
+  const next = structuredClone(state);
+  const choice = next.turn.pendingChoice;
+  if (next.status !== "playing" || next.turn.phase !== "resolving-poop" || !choice) throw new Error("There is no Poop card choice to resolve.");
+  if (choice.playerId !== actorId) throw new Error("Only the affected player can resolve this Poop card.");
+  const option = choice.options.find((candidate) => candidate.pieceId === pieceId && candidate.positions.some((position) => same(position, to)));
+  const piece = next.pieces.find((candidate) => candidate.id === pieceId && candidate.scored && candidate.ownerId === actorId);
+  if (!option || !piece || occupied(next).has(key(to))) throw new Error("Choose an escaped penguin and an open original starting space.");
+  piece.scored = false;
+  piece.position = { ...to };
+  piece.facing = START_FACING[option.color];
+  const player = next.players.find((candidate) => candidate.id === actorId)!;
+  player.score = Math.max(0, player.score - 1);
+  delete next.turn.pendingChoice;
+  returnPoopCard(next, choice.cardId);
+  if (resolvePoopUntilChoice(next, player)) finishTurnAfterPoop(next, player);
+  next.version += 1;
+  next.log.push(`${player.name} returned an escaped penguin to its starting line.`);
   return next;
 }
 
