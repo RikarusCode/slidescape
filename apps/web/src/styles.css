@@ -223,4 +223,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   .lobby-card .mode-picker { gap: .35rem; padding: .45rem; margin: .15rem 0 .65rem; }.mode-option { min-height: 54px; grid-template-columns: 46px 1fr 24px; padding-block: .25rem; }.mode-penguin { width: 46px; }.mode-option strong { font-size: 1rem; }.mode-option small { margin-top: .12rem; font-size: .72rem; }
   .lobby-card .primary-action, .lobby-card .secondary-action, .lobby-card .join-row input { min-height: 46px; }.private-room-action { margin-top: .65rem; }.lobby-card .join-row { margin-top: .55rem; }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .queue-spinner { animation: none !important; }
+}
