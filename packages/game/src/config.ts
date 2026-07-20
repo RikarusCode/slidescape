@@ -33,10 +33,10 @@ export const STARTING_POSITIONS: Record<Color, Position[]> = {
 };
 
 export const HAY_POSITIONS: Record<Color, Position[]> = {
-  green: [{ x: 5, y: 1 }, { x: 8, y: 1 }, { x: 5, y: 3 }, { x: 8, y: 3 }],
-  yellow: [{ x: 12, y: 5 }, { x: 12, y: 8 }, { x: 10, y: 5 }, { x: 10, y: 8 }],
-  red: [{ x: 5, y: 12 }, { x: 8, y: 12 }, { x: 5, y: 10 }, { x: 8, y: 10 }],
-  blue: [{ x: 1, y: 5 }, { x: 1, y: 8 }, { x: 3, y: 5 }, { x: 3, y: 8 }]
+  green: [{ x: 5, y: 1 }, { x: 8, y: 1 }, { x: 5, y: 10 }, { x: 8, y: 10 }],
+  yellow: [{ x: 12, y: 5 }, { x: 12, y: 8 }, { x: 3, y: 5 }, { x: 3, y: 8 }],
+  red: [{ x: 5, y: 12 }, { x: 8, y: 12 }, { x: 5, y: 3 }, { x: 8, y: 3 }],
+  blue: [{ x: 1, y: 5 }, { x: 1, y: 8 }, { x: 10, y: 5 }, { x: 10, y: 8 }]
 };
 
 export const GOAL_LANES: Record<Color, Position[]> = {

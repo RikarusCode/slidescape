@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_SIZE, HARVEST_CARDS, POOP_CARDS, STARTING_POSITIONS, createGame, drawHarvest, endTurn, legalMoves, move, placeCowAndPoop, playHarvest, resolvePoopChoice, roll } from "./index.js";
+import { BOARD_SIZE, HARVEST_CARDS, HAY_POSITIONS, POOP_CARDS, STARTING_POSITIONS, createGame, drawHarvest, endTurn, legalMoves, move, placeCowAndPoop, playHarvest, resolvePoopChoice, roll } from "./index.js";
 
 const guests = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `p${index + 1}`, name: `Player ${index + 1}` }));
 
@@ -28,6 +28,30 @@ describe("Slidescape setup", () => {
     expect(BOARD_SIZE).toBe(14);
     expect(STARTING_POSITIONS.green).toEqual([1, 3, 5, 8, 10, 12].map((x) => ({ x, y: 0 })));
     expect(STARTING_POSITIONS.yellow).toEqual([1, 3, 5, 8, 10, 12].map((y) => ({ x: 13, y })));
+  });
+
+  it("places two ice blocks near each flock's edge and two across the board", () => {
+    expect(HAY_POSITIONS).toEqual({
+      green: [{ x: 5, y: 1 }, { x: 8, y: 1 }, { x: 5, y: 10 }, { x: 8, y: 10 }],
+      yellow: [{ x: 12, y: 5 }, { x: 12, y: 8 }, { x: 3, y: 5 }, { x: 3, y: 8 }],
+      red: [{ x: 5, y: 12 }, { x: 8, y: 12 }, { x: 5, y: 3 }, { x: 8, y: 3 }],
+      blue: [{ x: 1, y: 5 }, { x: 1, y: 8 }, { x: 10, y: 5 }, { x: 10, y: 8 }]
+    });
+  });
+
+  it.each([
+    ["quick-2", 2, ["green", "red"]],
+    ["strategic-2", 2, ["green", "yellow", "red", "blue"]],
+    ["classic-4", 4, ["green", "yellow", "red", "blue"]]
+  ] as const)("uses the reference ice-block setup in %s", (mode, count, activeColors) => {
+    const state = createGame(`ice-${mode}`, mode, guests(count), 47);
+
+    for (const color of activeColors) {
+      expect(state.pieces
+        .filter((piece) => piece.kind === "hay" && piece.color === color)
+        .map((piece) => piece.position)
+      ).toEqual(HAY_POSITIONS[color]);
+    }
   });
 
   it("chooses a random starting player while keeping clockwise seat order", () => {
