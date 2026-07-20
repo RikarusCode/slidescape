@@ -8,7 +8,7 @@ function RulesArtwork() {
   return <div className="rules-artwork" aria-label="Slidescape game pieces">
     <figure><svg viewBox="0 0 1 1"><PenguinGlyph color={COLOR_HEX.blue} facing="right"/></svg><figcaption>Penguin</figcaption></figure>
     <figure><svg viewBox="0 0 1 1"><IceBlockGlyph color={COLOR_HEX.green}/></svg><figcaption>Ice block</figcaption></figure>
-    <figure><svg viewBox="0 0 1 1"><WalrusGlyph facing="down"/></svg><figcaption>Walrus</figcaption></figure>
+    <figure><svg viewBox="0 0 1 1"><WalrusGlyph facing="up"/></svg><figcaption>Walrus</figcaption></figure>
     <figure><svg viewBox="0 0 1 1"><PoopGlyph/></svg><figcaption>Poop</figcaption></figure>
     <figure className="fish-art"><span><Fish/></span><figcaption>Fish card</figcaption></figure>
   </div>;
@@ -38,8 +38,8 @@ export function RulesButton({ className = "" }: { className?: string }) {
           <section id="rules-goal" className="rules-section">
             <div className="rules-section-title"><Goal/><div><h3>Goal and setup</h3></div></div>
             <div className="rules-grid">
-              <div><h4>Winning targets</h4><ul><li><strong>Quick 2-player:</strong> one opposite flock each; first to escape four penguins.</li><li><strong>Strategic 2-player:</strong> two adjacent flocks each; first to escape ten penguins.</li><li><strong>4-player:</strong> one flock each; first to escape all six penguins.</li></ul></div>
-              <div><h4>Starting the game</h4><p>The board is a 14×14 grid. Each active side begins with six penguins and four ice blocks on its marked spaces. The first player is chosen randomly, then turns continue clockwise. In Standard 2-player, both adjacent flocks controlled by one player share that player’s selected color.</p><p>Penguins initially face across the board, then turn toward their latest slide. The walrus begins locked inside the four-square center fence, facing away from each viewer. An escaped penguin enters your off-board refuge and counts toward your score.</p></div>
+              <div><h4>Winning targets</h4><ul><li><strong>Beginner 2-player:</strong> one opposite team each; first to escape four penguins.</li><li><strong>Strategic 2-player:</strong> two adjacent teams each; first to escape ten penguins.</li><li><strong>4-player:</strong> one team each; first to escape all six penguins.</li></ul></div>
+              <div><h4>Starting the game</h4><p>The board is a 14×14 grid. Each active side begins with six penguins and four ice blocks on its marked spaces. The first player is chosen randomly, then turns continue clockwise. In Standard 2-player, both adjacent teams controlled by one player share that player’s selected color.</p><p>Penguins initially face across the board, then turn toward their latest slide. The walrus begins locked inside the four-square center fence, facing away from each viewer. An escaped penguin enters your off-board refuge and counts toward your score.</p></div>
             </div>
           </section>
 
@@ -49,13 +49,13 @@ export function RulesButton({ className = "" }: { className?: string }) {
               <div><h4>Penguins slide</h4><p>A penguin travels only up, down, left, or right. It keeps sliding until the square immediately before a penguin, ice block, walrus, active center ring, board edge, or closed side of an exit. Any distance in one direction costs one move.</p><p>You control only your own penguins, and each color may leave only through its own exit.</p></div>
               <div><h4>Ice blocks and walrus steps</h4><p>An ice block moves exactly one open square orthogonally per move. You may move only your own ice blocks. The walrus cannot move at all while its center ring remains. After it has been freed, any player may move it one open square in the same way.</p><p>You may split a roll among eligible pieces in any order, or move the same piece repeatedly. If no legal move exists, the turn can end early.</p></div>
             </div>
-            <div className="rule-callout"><strong>Blocking limit:</strong> A move is illegal if it leaves an active flock with no possible route to its own exit. A temporary seal is allowed when that player can eventually reopen it using one of their pieces or the walrus.</div>
+            <div className="rule-callout"><strong>Blocking limit:</strong> A move is illegal if it leaves an active team with no possible route to its own exit. A temporary seal is allowed when that player can eventually reopen it using one of their pieces or the walrus.</div>
           </section>
 
           <section id="rules-walrus" className="rules-section">
             <div className="rules-section-title"><Snowflake/><div><h3>Walrus and poop</h3></div></div>
             <div className="rules-grid">
-              <div><h4>Natural roll of one</h4><p>Before the first one is rolled, the walrus is locked inside its center ring and cannot be moved. On a natural one, choose either a normal move or free and relocate the walrus to any open square. Choosing the walrus removes the ring permanently. Leaving poop beneath it is optional.</p><p>If all eight poop tokens are already out and you choose to poop, select one existing token and recycle it beneath the walrus.</p></div>
+              <div><h4>Natural roll of one</h4><p>Before the first one is rolled, the walrus is locked inside its center ring and cannot be moved. On a natural one, either spend the move on a penguin or ice block, or choose one of the explicit walrus options and relocate it to any open square. This is also how you move it only one square: choose the adjacent destination after selecting whether it leaves poop. The first relocation removes the ring permanently.</p><p>If all eight poop tokens are already out and you choose to poop, select one existing token and recycle it beneath the walrus.</p></div>
               <div><h4>Crossing poop</h4><p>Poop never blocks movement. When a penguin or ice block crosses or enters a poop square, remove that token and queue one Poop card. Cross several tokens and you queue a card for each one, in crossing order.</p><p>Resolve every queued card after the turn. Returned cards immediately rejoin and reshuffle into their deck.</p></div>
             </div>
             <h4>Poop deck — 9 cards</h4>

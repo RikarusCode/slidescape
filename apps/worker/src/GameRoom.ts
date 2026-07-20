@@ -2,13 +2,13 @@ import { DurableObject } from "cloudflare:workers";
 import {
   createGame,
   advanceBotAction,
-  drawHarvest,
+  drawFish,
   endTurn,
   legalMoves,
   move,
   PLAYER_COLOR_ORDER,
-  placeCowAndPoop,
-  playHarvest,
+  placeWalrusAndPoop,
+  playFish,
   resolvePoopChoice,
   roll,
   type ClientCommand,
@@ -150,6 +150,7 @@ export class GameRoom extends DurableObject<Env> {
     }
     if (room.game?.status === "playing" && room.botActionAt && room.botActionAt <= now) {
       this.advanceScheduledBot(room);
+      this.resetTurnDeadline(room);
     } else if (room.game?.status === "playing" && room.game.turn.timerDeadline && room.game.turn.timerDeadline <= now) {
       await this.completeTimedTurn(room);
     }
@@ -230,10 +231,10 @@ export class GameRoom extends DurableObject<Env> {
     if (command.expectedVersion !== room.game.version) throw new Error("The board changed. Your view has been refreshed.");
     let next = room.game;
     if (command.type === "roll") next = roll(next, actorId);
-    else if (command.type === "draw-harvest") next = drawHarvest(next, actorId);
+    else if (command.type === "draw-fish") next = drawFish(next, actorId);
     else if (command.type === "move") next = move(next, actorId, command.move);
-    else if (command.type === "place-cow") next = placeCowAndPoop(next, actorId, command.to, { leavePoop: command.leavePoop, poopFrom: command.poopFrom });
-    else if (command.type === "play-harvest") next = playHarvest(next, actorId, command.play);
+    else if (command.type === "place-walrus") next = placeWalrusAndPoop(next, actorId, command.to, { leavePoop: command.leavePoop, poopFrom: command.poopFrom });
+    else if (command.type === "play-fish") next = playFish(next, actorId, command.play);
     else if (command.type === "resolve-poop-choice") next = resolvePoopChoice(next, actorId, command.pieceId, command.to);
     else if (command.type === "end-turn") next = endTurn(next, actorId);
     else throw new Error("Unknown game command.");
@@ -341,7 +342,14 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private resetTurnDeadline(room: RoomSnapshot): void {
-    if (!room.game || room.game.status !== "playing" || !room.settings.turnTimerSeconds) return;
+    if (!room.game || room.game.status !== "playing") return;
+    if (!room.settings.turnTimerSeconds) {
+      delete room.game.turn.timerDeadline;
+      delete room.game.turn.timerDurationSeconds;
+      return;
+    }
+    if (room.game.turn.timerDeadline) return;
+    room.game.turn.timerDurationSeconds = room.settings.turnTimerSeconds;
     room.game.turn.timerDeadline = Date.now() + room.settings.turnTimerSeconds * 1_000;
   }
 

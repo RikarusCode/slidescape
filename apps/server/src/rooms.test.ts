@@ -71,6 +71,7 @@ describe("room turn timers", () => {
 
     if (turnTimerSeconds === 0) expect(room.game?.turn.timerDeadline).toBeUndefined();
     else {
+      expect(room.game!.turn.timerDurationSeconds).toBe(turnTimerSeconds);
       const remaining = room.game!.turn.timerDeadline! - before;
       expect(remaining).toBeGreaterThanOrEqual(turnTimerSeconds * 1_000);
       expect(remaining).toBeLessThan(turnTimerSeconds * 1_000 + 1_000);
@@ -90,9 +91,35 @@ describe("room turn timers", () => {
     await rooms.setReady(room, second.id, true);
 
     expect(room.settings.turnTimerSeconds).toBe(90);
+    expect(room.game!.turn.timerDurationSeconds).toBe(90);
     const remaining = room.game!.turn.timerDeadline! - before;
     expect(remaining).toBeGreaterThanOrEqual(90_000);
     expect(remaining).toBeLessThan(91_000);
+    if (room.timeout) clearTimeout(room.timeout);
+  });
+
+  it("keeps one deadline throughout a turn and starts a fresh countdown for the next player", async () => {
+    const rooms = manager();
+    const host = rooms.guest("Host", "socket-host");
+    const guest = rooms.guest("Guest", "socket-guest");
+    const room = rooms.createPrivate(host, { mode: "quick-2", turnTimerSeconds: 45 });
+    rooms.joinPrivate(guest, room.code!);
+    await rooms.setReady(room, host.id, true);
+    await rooms.setReady(room, guest.id, true);
+    const actorId = room.game!.turn.activePlayerId;
+    const originalDeadline = room.game!.turn.timerDeadline;
+
+    await rooms.command(room, actorId, { type: "roll", commandId: "timer-roll", expectedVersion: room.game!.version });
+    expect(room.game!.turn.timerDeadline).toBe(originalDeadline);
+
+    room.game!.turn.phase = "moving";
+    room.game!.turn.movesRemaining = 0;
+    room.game!.turn.timerDeadline = Date.now() + 1_000;
+    const beforeNextTurn = Date.now();
+    await rooms.command(room, actorId, { type: "end-turn", commandId: "timer-end", expectedVersion: room.game!.version });
+    expect(room.game!.turn.activePlayerId).not.toBe(actorId);
+    expect(room.game!.turn.timerDurationSeconds).toBe(45);
+    expect(room.game!.turn.timerDeadline!).toBeGreaterThanOrEqual(beforeNextTurn + 45_000);
     if (room.timeout) clearTimeout(room.timeout);
   });
 

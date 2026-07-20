@@ -2,13 +2,13 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Server } from "socket.io";
 import {
   createGame,
-  drawHarvest,
+  drawFish,
   endTurn,
   legalMoves,
   move,
   PLAYER_COLOR_ORDER,
-  placeCowAndPoop,
-  playHarvest,
+  placeWalrusAndPoop,
+  playFish,
   roll,
   type ClientCommand,
   type GameMode,
@@ -193,10 +193,10 @@ export class RoomManager {
       if (command.expectedVersion !== room.game.version) throw new Error("The board changed. Your view has been refreshed.");
       let next = room.game;
       if (command.type === "roll") next = roll(next, actorId);
-      if (command.type === "draw-harvest") next = drawHarvest(next, actorId);
+      if (command.type === "draw-fish") next = drawFish(next, actorId);
       if (command.type === "move") next = move(next, actorId, command.move);
-      if (command.type === "place-cow") next = placeCowAndPoop(next, actorId, command.to, { leavePoop: command.leavePoop, poopFrom: command.poopFrom });
-      if (command.type === "play-harvest") next = playHarvest(next, actorId, command.play);
+      if (command.type === "place-walrus") next = placeWalrusAndPoop(next, actorId, command.to, { leavePoop: command.leavePoop, poopFrom: command.poopFrom });
+      if (command.type === "play-fish") next = playFish(next, actorId, command.play);
       if (command.type === "end-turn") next = endTurn(next, actorId);
       room.game = next;
       room.processed.add(command.commandId);
@@ -283,10 +283,19 @@ export class RoomManager {
 
   private armTimer(room: Room) {
     if (room.timeout) clearTimeout(room.timeout);
-    if (!room.settings.turnTimerSeconds || !room.game || room.game.status !== "playing") return;
+    if (!room.game || room.game.status !== "playing") return;
+    if (!room.settings.turnTimerSeconds) {
+      delete room.game.turn.timerDeadline;
+      delete room.game.turn.timerDurationSeconds;
+      return;
+    }
     const durationMs = room.settings.turnTimerSeconds * 1_000;
-    room.game.turn.timerDeadline = Date.now() + durationMs;
-    room.timeout = setTimeout(() => this.completeTimedTurn(room), durationMs);
+    if (!room.game.turn.timerDeadline) {
+      room.game.turn.timerDurationSeconds = room.settings.turnTimerSeconds;
+      room.game.turn.timerDeadline = Date.now() + durationMs;
+    }
+    const remainingMs = Math.max(0, room.game.turn.timerDeadline - Date.now());
+    room.timeout = setTimeout(() => this.completeTimedTurn(room), remainingMs);
     room.timeout.unref();
   }
 

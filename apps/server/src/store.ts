@@ -21,7 +21,7 @@ class RedisStore implements GameStore {
     const value = await this.redis.get(`slidescape:game:${id}`);
     if (!value) return undefined;
     const state = JSON.parse(value) as Partial<GameState>;
-    return state.schemaVersion === 3 ? state as GameState : undefined;
+    return state.schemaVersion === 4 ? state as GameState : undefined;
   }
 }
 

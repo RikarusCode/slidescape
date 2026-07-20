@@ -128,7 +128,7 @@ export function App() {
     });
   };
 
-  if (game && session) return <GameView state={game} playerId={session.playerId} roomCode={lobby?.code} connected={connected} message={message} send={send} onLeaveGame={leaveGame}/>;
+  if (game && session) return <GameView state={game} playerId={session.playerId} roomCode={lobby?.code} connected={connected} message={message} send={send} onLeaveGame={leaveGame} onReturnHome={() => returnHome()}/>;
   if (lobby && session) return <WaitingRoom lobby={lobby} playerId={session.playerId} message={message} onLeave={leaveLobby} onReady={(ready) => ensureSocket().emit("ready", ready)} onColorChange={(color?: PlayerColor) => action("select-color", { color })}/>;
   return <Home name={name} setName={setName} mode={mode} setMode={setMode} code={code} setCode={setCode} privateTimerSeconds={privateTimerSeconds} setPrivateTimerSeconds={setPrivateTimerSeconds} onCreate={() => action("create-private", { mode, turnTimerSeconds: privateTimerSeconds })} onJoin={() => action("join-private", { code })} onQueue={queueRandom} onCancelQueue={cancelQueue} onBot={() => action("play-bot", { mode })} searching={searching} message={message}/>;
 }

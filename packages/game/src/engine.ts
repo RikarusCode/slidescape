@@ -1,5 +1,5 @@
-import { COLOR_ORDER, FENCE_POSITIONS, GOAL_GUARD_BOUNDARIES, GOAL_LANES, HAY_POSITIONS, PLAYER_COLOR_ORDER, SCORE_TARGET, STARTING_POSITIONS } from "./config.js";
-import { expandedHarvestDeck, expandedPoopDeck } from "./cards.js";
+import { COLOR_ORDER, FENCE_POSITIONS, GOAL_GUARD_BOUNDARIES, GOAL_LANES, ICE_POSITIONS, PLAYER_COLOR_ORDER, SCORE_TARGET, STARTING_POSITIONS } from "./config.js";
+import { expandedFishDeck, expandedPoopDeck } from "./cards.js";
 import { nextRandom, shuffle } from "./random.js";
 import {
   BOARD_SIZE,
@@ -8,7 +8,7 @@ import {
   type GameMode,
   type GameGuest,
   type GameState,
-  type HarvestPlay,
+  type FishPlay,
   type LegalMove,
   type Piece,
   type PlayerState,
@@ -39,6 +39,18 @@ function facingToward(from: Position, to: Position, fallback: Direction = "down"
 
 function emptyEffects() {
   return { skipTurns: 0, forcedTwoMoveTurns: 0, forcedOpponentMoves: 0, flyoverCharges: 0, avoidPoopCharges: 0 };
+}
+
+function recordScoreHistory(state: GameState): void {
+  const snapshot = {
+    turnNumber: state.turn.number,
+    scores: Object.fromEntries(state.players.map((player) => [player.id, player.score]))
+  };
+  const history = state.scoreHistory ?? [];
+  const prior = history.at(-1);
+  state.scoreHistory = prior?.turnNumber === snapshot.turnNumber
+    ? [...history.slice(0, -1), snapshot]
+    : [...history, snapshot];
 }
 
 function playerColors(mode: GameMode): Color[][] {
@@ -86,19 +98,19 @@ export function createGame(
   const pieces: Piece[] = [];
   for (const color of activeColors) {
     STARTING_POSITIONS[color].forEach((position, index) => pieces.push({
-      id: `${color}-pig-${index + 1}`, kind: "pig", color, ownerId: ownerByColor.get(color), position: { ...position }, facing: START_FACING[color]
+      id: `${color}-penguin-${index + 1}`, kind: "penguin", color, ownerId: ownerByColor.get(color), position: { ...position }, facing: START_FACING[color]
     }));
-    HAY_POSITIONS[color].forEach((position, index) => pieces.push({
-      id: `${color}-hay-${index + 1}`, kind: "hay", color, ownerId: ownerByColor.get(color), position: { ...position }
+    ICE_POSITIONS[color].forEach((position, index) => pieces.push({
+      id: `${color}-ice-${index + 1}`, kind: "ice", color, ownerId: ownerByColor.get(color), position: { ...position }
     }));
   }
-  pieces.push({ id: "cow", kind: "cow", position: { x: 6, y: 6 }, facing: "down" });
+  pieces.push({ id: "walrus", kind: "walrus", position: { x: 6, y: 6 }, facing: "down" });
   const [firstValue, afterFirstPlayer] = nextRandom(afterColors);
   const firstPlayer = players[Math.floor(firstValue * players.length)]!;
-  const [harvestDeck, afterHarvest] = shuffle(expandedHarvestDeck(), afterFirstPlayer);
-  const [poopDeck, afterPoop] = shuffle(expandedPoopDeck(), afterHarvest);
-  return {
-    schemaVersion: 3,
+  const [fishDeck, afterFish] = shuffle(expandedFishDeck(), afterFirstPlayer);
+  const [poopDeck, afterPoop] = shuffle(expandedPoopDeck(), afterFish);
+  const state: GameState = {
+    schemaVersion: 4,
     id,
     mode,
     status: "playing",
@@ -109,12 +121,14 @@ export function createGame(
     poop: [],
     fenceActive: true,
     poopSupply: 8,
-    harvestDeck,
+    fishDeck,
     poopDeck,
     turnOrder: players.map((player) => player.id),
     turn: { number: 1, activePlayerId: firstPlayer.id, phase: "awaiting-roll", movesRemaining: 0, pendingPoop: [] },
     log: [`${firstPlayer.name} was randomly chosen to go first.`]
   };
+  recordScoreHistory(state);
+  return state;
 }
 
 export function activePlayer(state: GameState): PlayerState {
@@ -126,14 +140,14 @@ export function activePlayer(state: GameState): PlayerState {
 function occupied(state: GameState, except?: string): Map<string, Piece> {
   const result = new Map(state.pieces.filter((piece) => !piece.scored && piece.id !== except).map((piece) => [key(piece.position), piece]));
   if (state.fenceActive) {
-    const cow = state.pieces.find((piece) => piece.kind === "cow")!;
-    for (const position of FENCE_POSITIONS) result.set(key(position), cow);
+    const walrus = state.pieces.find((piece) => piece.kind === "walrus")!;
+    for (const position of FENCE_POSITIONS) result.set(key(position), walrus);
   }
   return result;
 }
 
 function exitsThroughGoal(piece: Piece, position: Position, direction: Direction): boolean {
-  if (piece.kind !== "pig" || !piece.color) return false;
+  if (piece.kind !== "penguin" || !piece.color) return false;
   const aligned = GOAL_LANES[piece.color].some((goal) => piece.color === "green" || piece.color === "red" ? goal.x === position.x : goal.y === position.y);
   return aligned && (
     (piece.color === "green" && direction === "down" && position.y === BOARD_SIZE - 1) ||
@@ -153,7 +167,7 @@ function crossesGoalGuard(from: Position, to: Position): boolean {
   return false;
 }
 
-function pigMove(state: GameState, piece: Piece, direction: Direction, flyover = false): LegalMove | undefined {
+function penguinMove(state: GameState, piece: Piece, direction: Direction, flyover = false): LegalMove | undefined {
   const blockers = occupied(state, piece.id);
   let cursor = piece.position;
   const crossedPoop: Position[] = [];
@@ -167,7 +181,7 @@ function pigMove(state: GameState, piece: Piece, direction: Direction, flyover =
     if (!inside(next) || crossesGoalGuard(cursor, next)) break;
     const blocker = blockers.get(key(next));
     if (blocker) {
-      if (flyover && !ignored && ["pig", "hay", "cow"].includes(blocker.kind) && !(blocker.kind === "cow" && state.fenceActive)) {
+      if (flyover && !ignored && ["penguin", "ice", "walrus"].includes(blocker.kind) && !(blocker.kind === "walrus" && state.fenceActive)) {
         ignored = true;
         cursor = next;
         continue;
@@ -189,22 +203,22 @@ function stepMove(state: GameState, piece: Piece, direction: Direction): LegalMo
     pieceId: piece.id,
     direction,
     to,
-    crossesPoop: piece.kind === "hay" && state.poop.some((poop) => same(poop, to)) ? [{ ...to }] : []
+    crossesPoop: piece.kind === "ice" && state.poop.some((poop) => same(poop, to)) ? [{ ...to }] : []
   };
 }
 
 function goalAccess(state: GameState, player: PlayerState): boolean {
   const hardBlockers = new Set(
     state.pieces
-      .filter((piece) => !piece.scored && piece.kind !== "cow" && piece.ownerId !== player.id)
+      .filter((piece) => !piece.scored && piece.kind !== "walrus" && piece.ownerId !== player.id)
       .map((piece) => key(piece.position))
   );
-  for (const pig of state.pieces.filter((piece) => piece.kind === "pig" && !piece.scored && piece.ownerId === player.id)) {
-    if (!pig.color) continue;
-    const goals = GOAL_LANES[pig.color];
+  for (const penguin of state.pieces.filter((piece) => piece.kind === "penguin" && !piece.scored && piece.ownerId === player.id)) {
+    if (!penguin.color) continue;
+    const goals = GOAL_LANES[penguin.color];
     const target = new Set(goals.map(key));
-    const queue = [{ ...pig.position }];
-    const seen = new Set([key(pig.position)]);
+    const queue = [{ ...penguin.position }];
+    const seen = new Set([key(penguin.position)]);
     let reached = false;
     while (queue.length && !reached) {
       const current = queue.shift()!;
@@ -224,7 +238,7 @@ function goalAccess(state: GameState, player: PlayerState): boolean {
 }
 
 function moveActorAllowed(state: GameState, piece: Piece, actorId: string): boolean {
-  if (piece.kind === "cow") return !state.fenceActive;
+  if (piece.kind === "walrus") return !state.fenceActive && state.turn.rolled !== 1;
   if (piece.ownerId === actorId) return true;
   return state.turn.forcedPieceOwnerIds?.[0] === piece.ownerId;
 }
@@ -240,9 +254,9 @@ export function legalMoves(state: GameState, actorId = state.turn.activePlayerId
   const moves: LegalMove[] = [];
   for (const piece of state.pieces) {
     if (piece.scored || !moveActorAllowed(state, piece, actorId)) continue;
-    if (preRollOpponentMove && (piece.ownerId !== forcedPieceOwnerId || piece.kind === "cow")) continue;
+    if (preRollOpponentMove && (piece.ownerId !== forcedPieceOwnerId || piece.kind === "walrus")) continue;
     for (const direction of DIRECTIONS) {
-      const move = piece.kind === "pig" ? pigMove(state, piece, direction, active.effects.flyoverCharges > 0) : stepMove(state, piece, direction);
+      const move = piece.kind === "penguin" ? penguinMove(state, piece, direction, active.effects.flyoverCharges > 0) : stepMove(state, piece, direction);
       if (!move) continue;
       const clone = structuredClone(state);
       applyMoveUnchecked(clone, move, false);
@@ -255,9 +269,9 @@ export function legalMoves(state: GameState, actorId = state.turn.activePlayerId
 export function legalMovesForPiece(state: GameState, pieceId: string): LegalMove[] {
   const piece = state.pieces.find((candidate) => candidate.id === pieceId && !candidate.scored);
   if (!piece) return [];
-  if (piece.kind === "cow" && state.fenceActive) return [];
+  if (piece.kind === "walrus" && (state.fenceActive || state.turn.rolled === 1)) return [];
   return DIRECTIONS.flatMap((direction) => {
-    const candidate = piece.kind === "pig" ? pigMove(state, piece, direction) : stepMove(state, piece, direction);
+    const candidate = piece.kind === "penguin" ? penguinMove(state, piece, direction) : stepMove(state, piece, direction);
     if (!candidate) return [];
     const clone = structuredClone(state);
     applyMoveUnchecked(clone, candidate, false);
@@ -289,7 +303,10 @@ function applyMoveUnchecked(state: GameState, move: LegalMove, triggerPoop = tru
     piece.scored = true;
     piece.position = { x: -1, y: -1 };
     const owner = state.players.find((player) => player.id === piece.ownerId);
-    if (owner) owner.score += 1;
+    if (owner) {
+      owner.score += 1;
+      recordScoreHistory(state);
+    }
   } else piece.position = { ...move.to };
   if (move.usesFlyover) activePlayer(state).effects.flyoverCharges = Math.max(0, activePlayer(state).effects.flyoverCharges - 1);
   if (!triggerPoop) return;
@@ -314,7 +331,7 @@ export function roll(state: GameState, actorId: string): GameState {
   const rolled = forcedTwo ? 2 : Math.floor(value * 6) + 1;
   if (forcedTwo) player.effects.forcedTwoMoveTurns -= 1;
   next.turn.rolled = rolled;
-  next.turn.harvestForbidden = forcedTwo;
+  next.turn.fishForbidden = forcedTwo;
   next.turn.movesRemaining = rolled;
   next.turn.fishDrawAvailable = rolled === 2 && !forcedTwo;
   next.turn.walrusRelocationsRemaining = rolled === 1 ? 1 : 0;
@@ -324,15 +341,15 @@ export function roll(state: GameState, actorId: string): GameState {
   return next;
 }
 
-export function drawHarvest(state: GameState, actorId: string): GameState {
+export function drawFish(state: GameState, actorId: string): GameState {
   const next = structuredClone(state);
   const player = activePlayer(next);
   if (player.id !== actorId || next.turn.phase !== "moving" || !next.turn.fishDrawAvailable) throw new Error("A Fish card can only replace an unused natural roll of two.");
-  if (player.harvestCard) throw new Error("You may hold only one Fish card.");
-  if (next.turn.harvestForbidden) throw new Error("A forced two-move turn cannot be traded for Fish.");
-  if (next.harvestDeck.length === 0) next.harvestDeck = expandedHarvestDeck();
-  player.harvestCard = next.harvestDeck.shift();
-  player.harvestDrawnTurn = next.turn.number;
+  if (player.fishCard) throw new Error("You may hold only one Fish card.");
+  if (next.turn.fishForbidden) throw new Error("A forced two-move turn cannot be traded for Fish.");
+  if (next.fishDeck.length === 0) next.fishDeck = expandedFishDeck();
+  player.fishCard = next.fishDeck.shift();
+  player.fishDrawnTurn = next.turn.number;
   next.turn.movesRemaining = 0;
   next.turn.fishDrawAvailable = false;
   next.version += 1;
@@ -358,20 +375,20 @@ export function move(state: GameState, actorId: string, requested: LegalMove): G
   return next;
 }
 
-function returnHarvest(state: GameState, player: PlayerState): void {
-  if (!player.harvestCard) return;
-  state.harvestDeck.push(player.harvestCard);
-  [state.harvestDeck, state.seed] = shuffle(state.harvestDeck, state.seed);
-  delete player.harvestCard;
-  delete player.harvestDrawnTurn;
+function returnFish(state: GameState, player: PlayerState): void {
+  if (!player.fishCard) return;
+  state.fishDeck.push(player.fishCard);
+  [state.fishDeck, state.seed] = shuffle(state.fishDeck, state.seed);
+  delete player.fishCard;
+  delete player.fishDrawnTurn;
 }
 
-export function playHarvest(state: GameState, actorId: string, play: HarvestPlay): GameState {
+export function playFish(state: GameState, actorId: string, play: FishPlay): GameState {
   const next = structuredClone(state);
   const player = activePlayer(next);
-  if (player.id !== actorId || next.turn.phase !== "moving") throw new Error("Harvest cards are played during your turn.");
-  if (player.harvestCard !== play.cardId) throw new Error("You do not hold that Harvest card.");
-  if (player.harvestDrawnTurn === next.turn.number) throw new Error("A Harvest card cannot be used on the turn it was drawn.");
+  if (player.id !== actorId || next.turn.phase !== "moving") throw new Error("Fish cards are played during your turn.");
+  if (player.fishCard !== play.cardId) throw new Error("You do not hold that Fish card.");
+  if (player.fishDrawnTurn === next.turn.number) throw new Error("A Fish card cannot be used on the turn it was drawn.");
   if (play.cardId === "flyover") player.effects.flyoverCharges += 1;
   if (play.cardId === "avoid-or-two") {
     if (play.choice === "avoid") {
@@ -389,22 +406,22 @@ export function playHarvest(state: GameState, actorId: string, play: HarvestPlay
   if (play.cardId === "steal-or-two") {
     if (play.choice === "two") next.turn.movesRemaining += 2;
     else {
-      const target = next.players.find((candidate) => candidate.id === play.targetPlayerId && candidate.harvestCard);
-      if (!target?.harvestCard) throw new Error("That opponent has no Harvest card.");
-      const own = player.harvestCard;
-      player.harvestCard = target.harvestCard;
-      player.harvestDrawnTurn = target.harvestDrawnTurn;
-      target.harvestCard = undefined;
-      target.harvestDrawnTurn = undefined;
+      const target = next.players.find((candidate) => candidate.id === play.targetPlayerId && candidate.fishCard);
+      if (!target?.fishCard) throw new Error("That opponent has no Fish card.");
+      const own = player.fishCard;
+      player.fishCard = target.fishCard;
+      player.fishDrawnTurn = target.fishDrawnTurn;
+      target.fishCard = undefined;
+      target.fishDrawnTurn = undefined;
       if (own) {
-        next.harvestDeck.push(own);
-        [next.harvestDeck, next.seed] = shuffle(next.harvestDeck, next.seed);
+        next.fishDeck.push(own);
+        [next.fishDeck, next.seed] = shuffle(next.fishDeck, next.seed);
       }
     }
   }
   if (play.cardId === "move-opponent") {
     const piece = next.pieces.find((candidate) => candidate.id === play.move.pieceId);
-    if (!piece || piece.ownerId === actorId || piece.kind === "cow") throw new Error("Choose an opponent's pig or hay bale.");
+    if (!piece || piece.ownerId === actorId || piece.kind === "walrus") throw new Error("Choose an opponent's penguin or ice block.");
     const legal = legalMovesForPiece(next, piece.id).find((candidate) => candidate.direction === play.move.direction && same(candidate.to, play.move.to));
     if (!legal) throw new Error("That opponent move is not legal.");
     applyMoveUnchecked(next, legal);
@@ -423,9 +440,9 @@ export function playHarvest(state: GameState, actorId: string, play: HarvestPlay
     next.turn.fishDrawAvailable = next.turn.rolled === 2;
     next.turn.walrusRelocationsRemaining = next.turn.rolled === 1 ? 1 : 0;
   }
-  if (play.cardId !== "steal-or-two" || play.choice === "two") returnHarvest(next, player);
+  if (play.cardId !== "steal-or-two" || play.choice === "two") returnFish(next, player);
   next.version += 1;
-  next.log.push(`${player.name} played a Harvest card.`);
+  next.log.push(`${player.name} played a Fish card.`);
   return next;
 }
 
@@ -437,7 +454,7 @@ function returnPoopCard(state: GameState, card: GameState["turn"]["pendingPoop"]
 function returnPenguinOptions(state: GameState, player: PlayerState) {
   const blocked = occupied(state);
   return state.pieces.flatMap((piece) => {
-    if (piece.kind !== "pig" || piece.ownerId !== player.id || !piece.scored || !piece.color) return [];
+    if (piece.kind !== "penguin" || piece.ownerId !== player.id || !piece.scored || !piece.color) return [];
     const positions = STARTING_POSITIONS[piece.color].filter((position) => !blocked.has(key(position))).map((position) => ({ ...position }));
     return positions.length ? [{ pieceId: piece.id, color: piece.color, positions }] : [];
   });
@@ -449,8 +466,8 @@ function resolvePoopUntilChoice(state: GameState, player: PlayerState): boolean 
     if (card === "skip-turn") player.effects.skipTurns += 1;
     if (card === "two-move-turn") player.effects.forcedTwoMoveTurns += 1;
     if (card === "opponent-moves") state.turn.forcedPieceOwnerIds = [...(state.turn.forcedPieceOwnerIds ?? []), player.id];
-    if (card === "discard-harvest") returnHarvest(state, player);
-    if (card === "return-pig") {
+    if (card === "discard-fish") returnFish(state, player);
+    if (card === "return-penguin") {
       const options = returnPenguinOptions(state, player);
       if (options.length > 0) {
         state.turn.pendingChoice = { type: "return-penguin", playerId: player.id, cardId: card, options };
@@ -521,6 +538,7 @@ export function resolvePoopChoice(state: GameState, actorId: string, pieceId: st
   piece.facing = START_FACING[option.color];
   const player = next.players.find((candidate) => candidate.id === actorId)!;
   player.score = Math.max(0, player.score - 1);
+  recordScoreHistory(next);
   delete next.turn.pendingChoice;
   returnPoopCard(next, choice.cardId);
   if (resolvePoopUntilChoice(next, player)) finishTurnAfterPoop(next, player);
@@ -529,7 +547,7 @@ export function resolvePoopChoice(state: GameState, actorId: string, pieceId: st
   return next;
 }
 
-export function placeCowAndPoop(
+export function placeWalrusAndPoop(
   state: GameState,
   actorId: string,
   to: Position,
@@ -538,10 +556,10 @@ export function placeCowAndPoop(
   const next = structuredClone(state);
   const player = activePlayer(next);
   if (player.id !== actorId || next.turn.phase !== "moving" || next.turn.movesRemaining < 1 || (next.turn.walrusRelocationsRemaining ?? 0) < 1) throw new Error("The walrus can be relocated only with an unused walrus action from a roll of one.");
-  if (!inside(to) || occupied(next, "cow").has(key(to))) throw new Error("Choose an open square.");
-  const cow = next.pieces.find((piece) => piece.kind === "cow")!;
-  cow.facing = facingToward(cow.position, to, cow.facing);
-  cow.position = { ...to };
+  if (!inside(to) || occupied(next, "walrus").has(key(to))) throw new Error("Choose an open square.");
+  const walrus = next.pieces.find((piece) => piece.kind === "walrus")!;
+  walrus.facing = facingToward(walrus.position, to, walrus.facing);
+  walrus.position = { ...to };
   next.fenceActive = false;
   if (options.leavePoop !== false && !next.poop.some((poop) => same(poop, to))) {
     if (next.poopSupply > 0) {

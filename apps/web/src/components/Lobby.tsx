@@ -14,9 +14,9 @@ export interface LobbyState {
 }
 
 export const MODE_LABELS: Record<GameMode, { title: string; detail: string; penguin: "blue" | "teal" | "purple" }> = {
-  "quick-2": { title: "Beginner 2-player", detail: "Opposite flocks · first to four", penguin: "blue" },
-  "strategic-2": { title: "Standard 2-player", detail: "Two flocks each · first to ten", penguin: "teal" },
-  "classic-4": { title: "Classic 4-player", detail: "One flock each · escape all six", penguin: "purple" }
+  "quick-2": { title: "Beginner 2-player", detail: "Opposite teams · first to four", penguin: "blue" },
+  "strategic-2": { title: "Standard 2-player", detail: "Two teams each · first to ten", penguin: "teal" },
+  "classic-4": { title: "Classic 4-player", detail: "One team each · escape all six", penguin: "purple" }
 };
 
 const TIMER_OPTIONS: ReadonlyArray<{ seconds: TurnTimerSeconds; label: string }> = [

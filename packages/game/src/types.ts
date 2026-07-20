@@ -5,10 +5,10 @@ export type TurnTimerSeconds = 0 | 45 | 90 | 180;
 export type Color = "green" | "yellow" | "red" | "blue";
 export type PlayerColor = "arctic-teal" | "sunburst" | "coral-red" | "cobalt-blue" | "aurora-purple" | "berry-pink" | "lime-green";
 export type Direction = "up" | "right" | "down" | "left";
-export type PieceKind = "pig" | "hay" | "cow";
+export type PieceKind = "penguin" | "ice" | "walrus";
 export type GameStatus = "playing" | "finished";
 export type TurnPhase = "awaiting-roll" | "moving" | "resolving-poop";
-export type HarvestCardId =
+export type FishCardId =
   | "flyover"
   | "avoid-or-two"
   | "relocate-and-roll"
@@ -17,10 +17,10 @@ export type HarvestCardId =
   | "double-roll";
 export type PoopCardId =
   | "skip-turn"
-  | "return-pig"
+  | "return-penguin"
   | "two-move-turn"
   | "opponent-moves"
-  | "discard-harvest";
+  | "discard-fish";
 
 export interface Position { x: number; y: number }
 
@@ -49,8 +49,8 @@ export interface PlayerState {
   themeColor: PlayerColor;
   score: number;
   connected: boolean;
-  harvestCard?: HarvestCardId;
-  harvestDrawnTurn?: number;
+  fishCard?: FishCardId;
+  fishDrawnTurn?: number;
   effects: PlayerEffects;
 }
 
@@ -59,7 +59,7 @@ export interface TurnState {
   activePlayerId: string;
   phase: TurnPhase;
   rolled?: number;
-  harvestForbidden?: boolean;
+  fishForbidden?: boolean;
   movesRemaining: number;
   pendingPoop: PoopCardId[];
   pendingChoice?: PendingCardChoice;
@@ -67,6 +67,12 @@ export interface TurnState {
   fishDrawAvailable?: boolean;
   walrusRelocationsRemaining?: number;
   timerDeadline?: number;
+  timerDurationSeconds?: TurnTimerSeconds;
+}
+
+export interface ScoreSnapshot {
+  turnNumber: number;
+  scores: Record<string, number>;
 }
 
 export interface ReturnPenguinOption {
@@ -78,7 +84,7 @@ export interface ReturnPenguinOption {
 export interface PendingCardChoice {
   type: "return-penguin";
   playerId: string;
-  cardId: "return-pig";
+  cardId: "return-penguin";
   options: ReturnPenguinOption[];
 }
 
@@ -91,7 +97,7 @@ export interface CardReveal {
 }
 
 export interface GameState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   id: string;
   mode: GameMode;
   status: GameStatus;
@@ -102,7 +108,7 @@ export interface GameState {
   poop: Position[];
   fenceActive: boolean;
   poopSupply: number;
-  harvestDeck: HarvestCardId[];
+  fishDeck: FishCardId[];
   poopDeck: PoopCardId[];
   turnOrder: string[];
   turn: TurnState;
@@ -110,13 +116,14 @@ export interface GameState {
   log: string[];
   cardRevealSequence?: number;
   cardReveals?: CardReveal[];
+  scoreHistory?: ScoreSnapshot[];
 }
 
 export interface GameGuest { id: string; name: string; colorChoice?: PlayerColor }
 
 export interface CardDefinition<T extends string = string> {
   id: T;
-  deck: "harvest" | "poop";
+  deck: "fish" | "poop";
   copies: number;
   timing: string;
   choices: string[];
@@ -133,7 +140,7 @@ export interface LegalMove {
   usesFlyover?: boolean;
 }
 
-export type HarvestPlay =
+export type FishPlay =
   | { cardId: "flyover" }
   | { cardId: "avoid-or-two"; choice: "avoid" | "two" }
   | { cardId: "relocate-and-roll"; poopFrom?: Position; poopTo?: Position }
@@ -149,10 +156,10 @@ export interface LobbySettings {
 
 export type ClientCommand =
   | { type: "roll"; commandId: string; expectedVersion: number }
-  | { type: "draw-harvest"; commandId: string; expectedVersion: number }
+  | { type: "draw-fish"; commandId: string; expectedVersion: number }
   | { type: "move"; commandId: string; expectedVersion: number; move: LegalMove }
-  | { type: "place-cow"; commandId: string; expectedVersion: number; to: Position; leavePoop?: boolean; poopFrom?: Position }
-  | { type: "play-harvest"; commandId: string; expectedVersion: number; play: HarvestPlay }
+  | { type: "place-walrus"; commandId: string; expectedVersion: number; to: Position; leavePoop?: boolean; poopFrom?: Position }
+  | { type: "play-fish"; commandId: string; expectedVersion: number; play: FishPlay }
   | { type: "resolve-poop-choice"; commandId: string; expectedVersion: number; pieceId: string; to: Position }
   | { type: "end-turn"; commandId: string; expectedVersion: number };
 

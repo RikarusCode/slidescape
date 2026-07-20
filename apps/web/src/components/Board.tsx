@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BOARD_SIZE, COLOR_HEX, COLOR_ORDER, FENCE_POSITIONS, legalMoves, PLAYER_COLOR_HEX, type Color, type Direction, type GameState, type LegalMove, type Piece, type Position } from "@slidescape/game";
-import { IceBlockGlyph, PenguinGlyph, PoopGlyph, startingFacing, WalrusGlyph } from "./PieceGlyphs.js";
+import { IceBlockGlyph, nearestFacingRotation, PenguinGlyph, PoopGlyph, startingFacing, WalrusGlyph } from "./PieceGlyphs.js";
 
 const GRID = Array.from({ length: BOARD_SIZE + 1 }, (_, index) => index);
 const DELTA: Record<Direction, Position> = {
@@ -27,18 +27,21 @@ function directionRotation(direction: Direction) {
   return 0;
 }
 
-function PieceGlyph({ piece, selected, color, walrusFacing }: { piece: Piece; selected: boolean; color: string; walrusFacing?: Direction }) {
-  if (piece.kind === "hay") return <g aria-label={`${piece.color} ice block`}><IceBlockGlyph color={color}/></g>;
-  if (piece.kind === "cow") return <g aria-label="walrus"><WalrusGlyph facing={walrusFacing ?? piece.facing}/></g>;
+function PieceGlyph({ piece, selected, color, walrusFacing, walrusRotation }: { piece: Piece; selected: boolean; color: string; walrusFacing?: Direction; walrusRotation?: number }) {
+  if (piece.kind === "ice") return <g aria-label={`${piece.color} ice block`}><IceBlockGlyph color={color}/></g>;
+  if (piece.kind === "walrus") return <g aria-label="walrus"><WalrusGlyph facing={walrusFacing ?? piece.facing} rotationDegrees={walrusRotation}/></g>;
   return <g aria-label={`${piece.color} penguin`}><PenguinGlyph color={color} facing={piece.facing ?? startingFacing(piece.color)} selected={selected}/></g>;
 }
 
 function AnimatedPiece({ piece, selected, selectable, fenceActive, color, walrusFacing, positionOverride, facingOverride, onSelect }: { piece: Piece; selected: boolean; selectable: boolean; fenceActive: boolean; color: string; walrusFacing?: Direction; positionOverride?: Position; facingOverride?: Direction; onSelect: (pieceId: string) => void }) {
-  const visualPosition = piece.kind === "cow" && fenceActive ? { x: 6.5, y: 6.5 } : positionOverride ?? piece.position;
-  const visualFacing = facingOverride ?? walrusFacing ?? piece.facing;
+  const visualPosition = piece.kind === "walrus" && fenceActive ? { x: 6.5, y: 6.5 } : positionOverride ?? piece.position;
+  const visualFacing = facingOverride ?? walrusFacing ?? piece.facing ?? "down";
   const node = useRef<SVGGElement>(null);
   const previous = useRef({ ...visualPosition });
   const previousFacing = useRef(visualFacing);
+  const walrusRotation = useRef(directionRotation(visualFacing));
+  const visualWalrusRotation = piece.kind === "walrus" ? nearestFacingRotation(walrusRotation.current, visualFacing) : undefined;
+  if (visualWalrusRotation !== undefined) walrusRotation.current = visualWalrusRotation;
   const [reducedMotion] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   useLayoutEffect(() => {
@@ -78,10 +81,10 @@ function AnimatedPiece({ piece, selected, selectable, fenceActive, color, walrus
     ref={node}
     data-piece-id={piece.id}
     transform={`translate(${visualPosition.x} ${visualPosition.y})`}
-    onClick={selectable && !(piece.kind === "cow" && fenceActive) ? () => onSelect(piece.id) : undefined}
+    onClick={selectable && !(piece.kind === "walrus" && fenceActive) ? () => onSelect(piece.id) : undefined}
     className={`board-piece ${selectable ? "selectable" : ""}`.trim()}
   >
-    <PieceGlyph piece={{ ...piece, facing: visualFacing }} selected={selected} color={color}/>
+    <PieceGlyph piece={{ ...piece, facing: visualFacing }} selected={selected} color={color} walrusRotation={visualWalrusRotation}/>
   </g>;
 }
 
@@ -119,7 +122,7 @@ export const Board = memo(function Board({ state, playerId, selectedId, onSelect
     const position = adjacent(selectedPiece.position, move.direction);
     return inside(position) ? [{ move, position }] : [];
   });
-  const projectedMoves = selectedPiece?.kind === "pig" ? selectedMoves.filter((move) => !move.scores) : [];
+  const projectedMoves = selectedPiece?.kind === "penguin" ? selectedMoves.filter((move) => !move.scores) : [];
   const pieces = state.pieces.filter((piece) => !piece.scored);
   const playerById = new Map(state.players.map((player) => [player.id, player]));
   const sideColors = Object.fromEntries(COLOR_ORDER.map((color) => {
@@ -173,9 +176,9 @@ export const Board = memo(function Board({ state, playerId, selectedId, onSelect
           className="projected-cell"
           aria-hidden="true"
         />)}
-        {state.fenceActive ? <g className="cow-fence" aria-label="walrus fence">
-          <rect x="6.08" y="6.08" width="1.84" height="1.84" rx=".16" className="cow-fence-frame"/>
-          {FENCE_POSITIONS.map((position) => <rect key={positionKey(position)} x={position.x + .12} y={position.y + .12} width=".76" height=".76" rx=".1" className="cow-fence-ice"/>)}
+        {state.fenceActive ? <g className="walrus-fence" aria-label="walrus fence">
+          <rect x="6.08" y="6.08" width="1.84" height="1.84" rx=".16" className="walrus-fence-frame"/>
+          {FENCE_POSITIONS.map((position) => <rect key={positionKey(position)} x={position.x + .12} y={position.y + .12} width=".76" height=".76" rx=".1" className="walrus-fence-ice"/>)}
         </g> : null}
         {state.poop.map((poop, index) => <g key={`${positionKey(poop)}-${index}`} transform={`translate(${poop.x} ${poop.y})`} aria-label="poop" onClick={() => onPoopSelect?.(poop)} className={onPoopSelect ? "selectable" : ""}>{selectedPoop && positionKey(selectedPoop) === positionKey(poop) ? <circle cx=".5" cy=".5" r=".4" fill="none" stroke="#2f80d0" strokeWidth=".08"/> : null}<PoopGlyph/></g>)}
         {pieces.map((piece) => <AnimatedPiece
@@ -185,7 +188,7 @@ export const Board = memo(function Board({ state, playerId, selectedId, onSelect
           selectable={specialSelectableIds ? specialSelectableIds.includes(piece.id) : available.some((move) => move.pieceId === piece.id)}
           fenceActive={state.fenceActive}
           color={piece.ownerId ? PLAYER_COLOR_HEX[playerById.get(piece.ownerId)!.themeColor] : "#ffffff"}
-          walrusFacing={piece.kind === "cow" && state.fenceActive ? startingFacing(viewer?.colors[0]) : undefined}
+          walrusFacing={piece.kind === "walrus" && state.fenceActive ? startingFacing(viewer?.colors[0]) : undefined}
           positionOverride={optimisticMove?.pieceId === piece.id ? optimisticMove.to : undefined}
           facingOverride={optimisticMove?.pieceId === piece.id ? optimisticMove.direction : undefined}
           onSelect={onSelect}
