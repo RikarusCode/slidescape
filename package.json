@@ -7,7 +7,7 @@
     "build": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/server build && pnpm --filter @slidescape/web build && pnpm --filter @slidescape/worker build",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry": "pnpm build && wrangler deploy --dry-run",
-    "test": "vitest run",
+    "test": "pnpm --filter @slidescape/game build && vitest run",
     "test:worker": "node scripts/smoke-worker.mjs",
     "typecheck": "pnpm -r typecheck"
   },
