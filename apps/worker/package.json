@@ -1,0 +1,19 @@
+{
+  "name": "@slidescape/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --config ../../wrangler.jsonc --dry-run --outdir dist",
+    "dev": "wrangler dev --config ../../wrangler.jsonc --port 8787",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@slidescape/game": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260719.1",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.112.0"
+  }
+}

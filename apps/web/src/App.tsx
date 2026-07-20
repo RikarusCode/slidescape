@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ClientCommand, GameMode, GameState, PlayerColor, TurnTimerSeconds } from "@slidescape/game";
-import type { Socket } from "socket.io-client";
 import { GameView } from "./components/GameView.js";
 import { Home, WaitingRoom, type LobbyState } from "./components/Lobby.js";
-import { connectGame, readSession, SESSION_KEY, type Session } from "./socket.js";
+import { connectGame, readSession, SESSION_KEY, type GameSocket, type Session } from "./socket.js";
 
 interface ActionReply { ok: boolean; message?: string; waiting?: boolean }
 
@@ -18,7 +17,7 @@ export function App() {
   const [message, setMessage] = useState<string>();
   const [searching, setSearching] = useState(false);
   const [connected, setConnected] = useState(false);
-  const socketRef = useRef<Socket | undefined>(undefined);
+  const socketRef = useRef<GameSocket | undefined>(undefined);
 
   const ensureSocket = () => {
     if (socketRef.current) return socketRef.current;

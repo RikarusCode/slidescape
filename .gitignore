@@ -6,3 +6,6 @@ coverage/
 .DS_Store
 *.log
 .vite/
+.wrangler/
+.wrangler-dry-run/
+.dev.vars

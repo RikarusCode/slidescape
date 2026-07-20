@@ -3,13 +3,18 @@
   "private": true,
   "packageManager": "pnpm@10.12.1",
   "scripts": {
-    "dev": "pnpm --filter @slidescape/game build && pnpm --parallel --filter @slidescape/server --filter @slidescape/web dev",
-    "build": "pnpm -r build",
+    "dev": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --parallel --filter @slidescape/worker --filter @slidescape/web dev",
+    "build": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/server build && pnpm --filter @slidescape/web build && pnpm --filter @slidescape/worker build",
+    "deploy": "pnpm build && wrangler deploy",
+    "deploy:dry": "pnpm build && wrangler deploy --dry-run",
     "test": "vitest run",
+    "test:worker": "node scripts/smoke-worker.mjs",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260719.1",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.112.0"
   }
 }
