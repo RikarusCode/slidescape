@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Bot, ChevronRight, Copy, LoaderCircle, LockKeyhole, PencilLine, Shuffle, Snowflake, Users, X } from "lucide-react";
+import { ArrowLeft, Bot, ChevronRight, Copy, LockKeyhole, PencilLine, Shuffle, Snowflake, Users, X } from "lucide-react";
 import { PLAYER_COLOR_HEX, PLAYER_COLOR_LABEL, PLAYER_COLOR_ORDER, type GameMode, type LobbySettings, type PlayerColor, type TurnTimerSeconds } from "@slidescape/game";
 import { RulesButton } from "./RulesDialog.js";
 
@@ -74,7 +74,7 @@ export function Home({ name, setName, mode, setMode, code, setCode, privateTimer
       <div className="play-row"><button type="button" className="primary-action" disabled={searching} onClick={onQueue}><Shuffle size={22}/> Find a random game</button><button type="button" className="secondary-action bot-action" disabled={searching} onClick={onBot}><Bot size={21}/> Play a bot</button></div>
       <button type="button" className="secondary-action private-room-action" onClick={() => setPrivateRoomOpen(true)}><span className="button-icon"><LockKeyhole size={20}/></span> Create private room</button>
       <div className="join-row"><input aria-label="Private room code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} maxLength={6} placeholder="ENTER ROOM CODE"/><button type="button" onClick={onJoin}>Join</button></div>
-      {searching ? <div className="searching-bar" role="status"><span><LoaderCircle size={18}/> Searching for players…</span><button onClick={onCancelQueue}>Cancel</button></div> : message ? <p className="form-message" role="status">{message}</p> : null}
+      {searching ? <div className="searching-bar" role="status"><span><i className="queue-spinner" aria-hidden="true"/> Searching for players…</span><button onClick={onCancelQueue}>Cancel</button></div> : message ? <p className="form-message" role="status">{message}</p> : null}
     </section>
     {privateRoomOpen ? <div className="private-room-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPrivateRoomOpen(false); }}>
       <section className="private-room-dialog" role="dialog" aria-modal="true" aria-labelledby="private-room-title">

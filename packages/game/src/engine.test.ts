@@ -90,6 +90,39 @@ describe("movement", () => {
     expect(moves.every((entry) => Math.abs(entry.to.x - 5) + Math.abs(entry.to.y - 1) === 1)).toBe(true);
   });
 
+  it("treats every goal guard side as a solid movement barrier", () => {
+    const state = createGame("goal-guards", "quick-2", guests(2), 29);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.rolled = 6;
+    state.turn.movesRemaining = 6;
+    state.fenceActive = false;
+    for (const piece of state.pieces) piece.scored = true;
+
+    const penguin = state.pieces.find((piece) => piece.id === "green-pig-1")!;
+    penguin.scored = false;
+    penguin.position = { x: 4, y: 0 };
+    const topIceBlock = state.pieces.find((piece) => piece.id === "green-hay-1")!;
+    topIceBlock.scored = false;
+    topIceBlock.position = { x: 7, y: 0 };
+    const bottomIceBlock = state.pieces.find((piece) => piece.id === "green-hay-2")!;
+    bottomIceBlock.scored = false;
+    bottomIceBlock.position = { x: 7, y: 13 };
+    const leftIceBlock = state.pieces.find((piece) => piece.id === "green-hay-3")!;
+    leftIceBlock.scored = false;
+    leftIceBlock.position = { x: 0, y: 7 };
+    const walrus = state.pieces.find((piece) => piece.kind === "cow")!;
+    walrus.scored = false;
+    walrus.position = { x: 13, y: 5 };
+
+    const moves = legalMoves(state, "p1");
+    expect(moves.find((entry) => entry.pieceId === penguin.id && entry.direction === "right")?.to).toEqual({ x: 5, y: 0 });
+    expect(moves.some((entry) => entry.pieceId === topIceBlock.id && entry.direction === "right")).toBe(false);
+    expect(moves.some((entry) => entry.pieceId === bottomIceBlock.id && entry.direction === "right")).toBe(false);
+    expect(moves.some((entry) => entry.pieceId === leftIceBlock.id && entry.direction === "down")).toBe(false);
+    expect(moves.some((entry) => entry.pieceId === walrus.id && entry.direction === "down")).toBe(false);
+  });
+
   it("reveals a Poop card to every client state when hay crosses poop", () => {
     const state = createGame("hay-poop", "quick-2", guests(2), 11);
     state.turn.activePlayerId = "p1";

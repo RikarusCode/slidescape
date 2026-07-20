@@ -1,4 +1,4 @@
-import { COLOR_ORDER, FENCE_POSITIONS, GOAL_LANES, HAY_POSITIONS, PLAYER_COLOR_ORDER, SCORE_TARGET, STARTING_POSITIONS } from "./config.js";
+import { COLOR_ORDER, FENCE_POSITIONS, GOAL_GUARD_BOUNDARIES, GOAL_LANES, HAY_POSITIONS, PLAYER_COLOR_ORDER, SCORE_TARGET, STARTING_POSITIONS } from "./config.js";
 import { expandedHarvestDeck, expandedPoopDeck } from "./cards.js";
 import { nextRandom, shuffle } from "./random.js";
 import {
@@ -143,6 +143,16 @@ function exitsThroughGoal(piece: Piece, position: Position, direction: Direction
   );
 }
 
+function crossesGoalGuard(from: Position, to: Position): boolean {
+  if (from.y === to.y && (from.y === 0 || from.y === BOARD_SIZE - 1)) {
+    return GOAL_GUARD_BOUNDARIES.some((boundary) => boundary === Math.max(from.x, to.x));
+  }
+  if (from.x === to.x && (from.x === 0 || from.x === BOARD_SIZE - 1)) {
+    return GOAL_GUARD_BOUNDARIES.some((boundary) => boundary === Math.max(from.y, to.y));
+  }
+  return false;
+}
+
 function pigMove(state: GameState, piece: Piece, direction: Direction, flyover = false): LegalMove | undefined {
   const blockers = occupied(state, piece.id);
   let cursor = piece.position;
@@ -154,7 +164,7 @@ function pigMove(state: GameState, piece: Piece, direction: Direction, flyover =
       return { pieceId: piece.id, direction, to: cursor, scores: true, crossesPoop: crossedPoop, usesFlyover: ignored };
     }
     const next = step(cursor, direction);
-    if (!inside(next)) break;
+    if (!inside(next) || crossesGoalGuard(cursor, next)) break;
     const blocker = blockers.get(key(next));
     if (blocker) {
       if (flyover && !ignored && ["pig", "hay", "cow"].includes(blocker.kind) && !(blocker.kind === "cow" && state.fenceActive)) {
@@ -174,7 +184,7 @@ function pigMove(state: GameState, piece: Piece, direction: Direction, flyover =
 
 function stepMove(state: GameState, piece: Piece, direction: Direction): LegalMove | undefined {
   const to = step(piece.position, direction);
-  if (!inside(to) || occupied(state, piece.id).has(key(to))) return undefined;
+  if (!inside(to) || crossesGoalGuard(piece.position, to) || occupied(state, piece.id).has(key(to))) return undefined;
   return {
     pieceId: piece.id,
     direction,
@@ -202,7 +212,7 @@ function goalAccess(state: GameState, player: PlayerState): boolean {
       for (const direction of DIRECTIONS) {
         const next = step(current, direction);
         const id = key(next);
-        if (inside(next) && !hardBlockers.has(id) && !seen.has(id)) {
+        if (inside(next) && !crossesGoalGuard(current, next) && !hardBlockers.has(id) && !seen.has(id)) {
           seen.add(id);
           queue.push(next);
         }

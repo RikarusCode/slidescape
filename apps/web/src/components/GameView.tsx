@@ -99,6 +99,18 @@ export function GameView({ state, playerId, roomCode, connected, message, send, 
   }, [pendingChoice?.playerId, pendingChoice?.cardId, pendingChoice?.options]);
 
   const clearSpecial = () => { setSpecialMode(undefined); setSelectedPoop(undefined); };
+  const chooseWalrusMode = (mode: Extract<SpecialMode, "walrus-poop" | "walrus-only">) => {
+    setSelectedId(undefined);
+    setSelectedPoop(undefined);
+    setSpecialMode(mode);
+  };
+  const selectBoardPiece = (pieceId: string) => {
+    if (!isMyTurn) return;
+    if (specialMode === "opponent" && !specialSelectableIds?.includes(pieceId)) return;
+    const piece = state.pieces.find((candidate) => candidate.id === pieceId);
+    if ((specialMode === "walrus-poop" || specialMode === "walrus-only") && piece?.kind === "pig") clearSpecial();
+    setSelectedId(pieceId);
+  };
   const playSimpleCard = () => {
     if (!me.harvestCard) return;
     let play: HarvestPlay;
@@ -132,16 +144,12 @@ export function GameView({ state, playerId, roomCode, connected, message, send, 
   return <div className="game-shell">
     <header className="game-header"><div className="wordmark"><SlidescapeMark className="game-logo-mark"/><span>Slidescape</span></div><div className="room-meta"><span className="game-mode-pill">{MODE_LABELS[state.mode].title}</span>{roomCode ? <button onClick={() => navigator.clipboard.writeText(roomCode)}>Room {roomCode}<Copy size={15}/></button> : null}</div><div className="connection"><span className="connection-status"><i className={connected ? "online" : "offline"}/>{connected ? "Connected" : "Reconnecting"}</span><RulesButton/><div className="game-settings-wrap"><button className="settings-toggle" aria-label="Game settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}><Settings size={21}/></button>{settingsOpen ? <section className="game-settings-menu" role="dialog" aria-label="Game settings menu"><header><strong>Game options</strong><button aria-label="Close game settings" onClick={() => setSettingsOpen(false)}><X size={18}/></button></header><p>Leave this match and return to the home screen.</p><button className="leave-game-button" onClick={onLeaveGame}><LogOut size={18}/> Leave game</button></section> : null}</div></div></header>
     {message ? <div className="game-message" role="status">{message}</div> : null}
-    <main className="game-layout"><Board state={state} playerId={playerId} selectedId={selectedId} onSelect={(pieceId) => {
-      if (!isMyTurn) return;
-      if (specialMode === "opponent" && !specialSelectableIds?.includes(pieceId)) return;
-      setSelectedId(pieceId);
-    }} specialMoves={specialMode === "opponent" && selectedId ? legalMovesForPiece(state, selectedId) : undefined} specialSelectableIds={specialSelectableIds} onMove={(move: LegalMove) => { if (specialMode === "opponent") { dispatch({ type: "play-harvest", play: { cardId: "move-opponent", move } }); clearSpecial(); } else dispatch({ type: "move", move }); setSelectedId(undefined); }} onPoopSelect={isMyTurn && (specialMode === "poop" || (specialMode === "walrus-poop" && state.poopSupply === 0)) ? setSelectedPoop : undefined} selectedPoop={selectedPoop} onEmptyCell={isMyTurn && specialMode && specialMode !== "opponent" ? chooseEmptyCell : undefined}/>
+    <main className="game-layout"><Board state={state} playerId={playerId} selectedId={selectedId} onSelect={selectBoardPiece} specialMoves={specialMode === "opponent" && selectedId ? legalMovesForPiece(state, selectedId) : undefined} specialSelectableIds={specialSelectableIds} onMove={(move: LegalMove) => { if (specialMode === "opponent") { dispatch({ type: "play-harvest", play: { cardId: "move-opponent", move } }); clearSpecial(); } else dispatch({ type: "move", move }); setSelectedId(undefined); }} onPoopSelect={isMyTurn && (specialMode === "poop" || (specialMode === "walrus-poop" && state.poopSupply === 0)) ? setSelectedPoop : undefined} selectedPoop={selectedPoop} onEmptyCell={isMyTurn && specialMode && specialMode !== "opponent" ? chooseEmptyCell : undefined}/>
       <aside className="game-sidebar">
         <section className="turn-panel"><div className="turn-title"><span className="player-token" style={{ background: PLAYER_COLOR_HEX[active.themeColor] }}/><h1>{isMyTurn ? "Your turn" : `${active.name}’s turn`}</h1></div><div className="roll-row"><div className={`die ${rolling ? "rolling" : ""}`} aria-label={rolling ? "Rolling die" : state.turn.rolled ? `Die shows ${state.turn.rolled}` : "Die ready"}><DieIcon/></div><div>{rolling ? <><strong>Rolling…</strong><span>The die is tumbling</span></> : state.turn.rolled ? <><strong>Rolled {state.turn.rolled}</strong><span>{state.turn.movesRemaining} {state.turn.movesRemaining === 1 ? "move" : "moves"} left</span></> : <><strong>Ready to roll</strong><span>{isMyTurn ? "Your move" : "Waiting"}</span></>}</div></div>
           {instruction ? <p className="target-instruction">{instruction}</p> : null}
           {isMyTurn && state.turn.phase === "awaiting-roll" && !state.turn.forcedPieceOwnerIds?.length ? <button className="primary-action" disabled={!connected || rolling} onClick={() => { setDieFrame(0); setRolling(true); dispatch({ type: "roll" }); }}>{connected ? "Roll the die" : "Waiting for connection…"}</button> : null}
-          {canRelocateWalrus ? <div className="walrus-actions"><button className="fish-action" onClick={() => { setSpecialMode("walrus-poop"); setSelectedPoop(undefined); }}>Relocate walrus + poop</button><button className="fish-action subtle" onClick={() => setSpecialMode("walrus-only")}>Relocate without poop</button></div> : null}
+          {canRelocateWalrus ? <div className="walrus-actions"><button className={`fish-action walrus-choice ${specialMode === "walrus-poop" ? "selected" : ""}`.trim()} aria-pressed={specialMode === "walrus-poop"} onClick={() => chooseWalrusMode("walrus-poop")}>Relocate walrus + poop</button><button className={`fish-action walrus-choice ${specialMode === "walrus-only" ? "selected" : ""}`.trim()} aria-pressed={specialMode === "walrus-only"} onClick={() => chooseWalrusMode("walrus-only")}>Relocate without poop</button></div> : null}
           {isMyTurn && state.turn.fishDrawAvailable && !me.harvestCard ? <button className="fish-action" onClick={() => dispatch({ type: "draw-harvest" })}><Fish size={18}/> Take a Fish card instead</button> : null}
           <button className="end-turn" disabled={!canEnd} onClick={() => dispatch({ type: "end-turn" })}>End turn</button>
         </section>

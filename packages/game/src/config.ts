@@ -46,6 +46,8 @@ export const GOAL_LANES: Record<Color, Position[]> = {
   blue: [6, 7].map((y) => ({ x: 13, y }))
 };
 
+export const GOAL_GUARD_BOUNDARIES = [6, 8] as const;
+
 export const FENCE_POSITIONS: Position[] = [
   { x: 6, y: 6 }, { x: 7, y: 6 }, { x: 6, y: 7 }, { x: 7, y: 7 }
 ];
