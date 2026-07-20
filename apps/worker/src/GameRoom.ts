@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   createGame,
+  advanceBotAction,
   drawHarvest,
   endTurn,
   legalMoves,
@@ -18,6 +19,9 @@ import { parseWireMessage, playerCount, randomSeed, RECONNECT_MS, ROOM_TTL_MS, s
 import type { ActionReply, PublicLobby, RoomMember, RoomSnapshot, SessionIdentity } from "./types.js";
 
 interface SocketAttachment { memberId: string }
+const BOT_ACTION_DELAY_MS = 700;
+const BOT_ROLL_DELAY_MS = 1_000;
+const BOT_OPENING_DELAY_MS = 1_100;
 
 export class GameRoom extends DurableObject<Env> {
   async initializePrivate(id: string, code: string, identity: SessionIdentity, settings: Omit<LobbySettings, "privacy">): Promise<PublicLobby | undefined> {
@@ -56,7 +60,6 @@ export class GameRoom extends DurableObject<Env> {
       processed: [], disconnectDeadlines: {}, expiresAt: Date.now() + ROOM_TTL_MS
     };
     room.game = createGame(id, mode, members.map(({ playerId, name, colorChoice }) => ({ id: playerId, name, colorChoice })), randomSeed());
-    await this.runBotTurns(room);
     await this.save(room);
     return { lobby: this.publicLobby(room), game: room.game };
   }
@@ -101,6 +104,9 @@ export class GameRoom extends DurableObject<Env> {
     delete room.disconnectDeadlines[member.playerId];
     room.game?.players.forEach((player) => { if (player.id === member.playerId) player.connected = true; });
     room.expiresAt = Date.now() + ROOM_TTL_MS;
+    if (room.game && this.activeMemberIsBot(room) && !room.botActionAt) {
+      room.botActionAt = Date.now() + BOT_OPENING_DELAY_MS;
+    }
     await this.save(room);
     sendEvent(server, "session", { playerId: member.playerId, reconnectToken: member.reconnectToken, roomId: room.id });
     sendEvent(server, "lobby-state", this.publicLobby(room));
@@ -141,7 +147,9 @@ export class GameRoom extends DurableObject<Env> {
     for (const [memberId, deadline] of Object.entries(room.disconnectDeadlines)) {
       if (deadline <= now) this.forfeitDisconnected(room, memberId);
     }
-    if (room.game?.status === "playing" && room.game.turn.timerDeadline && room.game.turn.timerDeadline <= now) {
+    if (room.game?.status === "playing" && room.botActionAt && room.botActionAt <= now) {
+      this.advanceScheduledBot(room);
+    } else if (room.game?.status === "playing" && room.game.turn.timerDeadline && room.game.turn.timerDeadline <= now) {
       await this.completeTimedTurn(room);
     }
     await this.save(room);
@@ -163,7 +171,7 @@ export class GameRoom extends DurableObject<Env> {
       if (!room.game) member.ready = payload === true;
       if (!room.game && room.members.length === playerCount(room.settings.mode) && room.members.every((candidate) => candidate.ready || candidate.isBot)) {
         room.game = createGame(room.id, room.settings.mode, room.members.map(({ playerId, name, colorChoice }) => ({ id: playerId, name, colorChoice })), randomSeed());
-        await this.runBotTurns(room);
+        this.scheduleBotAction(room, BOT_OPENING_DELAY_MS);
         this.resetTurnDeadline(room);
       }
       await this.save(room);
@@ -230,29 +238,28 @@ export class GameRoom extends DurableObject<Env> {
     room.game = next;
     room.processed.push(command.commandId);
     if (room.processed.length > 500) room.processed = room.processed.slice(-250);
-    await this.runBotTurns(room);
+    this.scheduleBotAction(room);
   }
 
-  private async runBotTurns(room: RoomSnapshot): Promise<void> {
-    let state = room.game;
-    let turnGuard = 8;
-    while (state?.status === "playing" && room.members.find((member) => member.playerId === state!.turn.activePlayerId)?.isBot && turnGuard-- > 0) {
-      const actor = state.turn.activePlayerId;
-      let guard = 96;
-      while (state.turn.phase === "awaiting-roll" && state.players.find((player) => player.id === actor)!.effects.forcedOpponentMoves > 0 && guard-- > 0) {
-        const moves = legalMoves(state, actor);
-        if (!moves.length) break;
-        state = move(state, actor, moves[state.seed % moves.length]!);
-      }
-      if (state.turn.phase === "awaiting-roll") state = roll(state, actor);
-      while (state.turn.phase === "moving" && state.turn.movesRemaining > 0 && guard-- > 0) {
-        const moves = legalMoves(state, actor);
-        if (!moves.length) break;
-        state = move(state, actor, moves[(state.seed + guard) % moves.length]!);
-      }
-      state = endTurn(state, actor);
-      room.game = state;
+  private activeMemberIsBot(room: RoomSnapshot): boolean {
+    return Boolean(room.game && room.members.find((member) => member.playerId === room.game!.turn.activePlayerId)?.isBot);
+  }
+
+  private scheduleBotAction(room: RoomSnapshot, delay = BOT_ACTION_DELAY_MS): void {
+    if (!this.activeMemberIsBot(room) || room.game?.status !== "playing") {
+      delete room.botActionAt;
+      return;
     }
+    room.botActionAt ??= Date.now() + delay;
+  }
+
+  private advanceScheduledBot(room: RoomSnapshot): void {
+    const game = room.game;
+    delete room.botActionAt;
+    if (!game || game.status !== "playing" || !this.activeMemberIsBot(room)) return;
+    const result = advanceBotAction(game, game.turn.activePlayerId);
+    room.game = result.state;
+    this.scheduleBotAction(room, result.kind === "roll" ? BOT_ROLL_DELAY_MS : BOT_ACTION_DELAY_MS);
   }
 
   private async completeTimedTurn(room: RoomSnapshot): Promise<void> {
@@ -273,7 +280,7 @@ export class GameRoom extends DurableObject<Env> {
     }
     state = endTurn(state, actor);
     room.game = state;
-    await this.runBotTurns(room);
+    this.scheduleBotAction(room);
     this.resetTurnDeadline(room);
   }
 
@@ -344,7 +351,7 @@ export class GameRoom extends DurableObject<Env> {
 
   private async save(room: RoomSnapshot): Promise<void> {
     await this.ctx.storage.put("room", room);
-    const deadlines = [room.expiresAt, room.game?.turn.timerDeadline, ...Object.values(room.disconnectDeadlines)].filter((value): value is number => typeof value === "number" && value > Date.now());
+    const deadlines = [room.expiresAt, room.game?.turn.timerDeadline, room.botActionAt, ...Object.values(room.disconnectDeadlines)].filter((value): value is number => typeof value === "number" && value > Date.now());
     if (deadlines.length) await this.ctx.storage.setAlarm(Math.min(...deadlines));
     else await this.ctx.storage.deleteAlarm();
   }

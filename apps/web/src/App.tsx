@@ -50,8 +50,12 @@ export function App() {
     });
     socket.on("lobby-state", (value: LobbyState) => { setLobby(value); setSearching(false); setMessage(undefined); });
     socket.on("lobby-closed", (value: string) => { setLobby(undefined); setMessage(value); });
-    socket.on("game-state", (value: GameState) => { setGame(value); setSearching(false); setMessage(undefined); });
-    socket.on("game-over", (value: GameState) => setGame(value));
+    const acceptCanonicalState = (value: GameState) => setGame((current) => {
+      if (current?.id === value.id && current.version > value.version) return current;
+      return value;
+    });
+    socket.on("game-state", (value: GameState) => { acceptCanonicalState(value); setSearching(false); setMessage(undefined); });
+    socket.on("game-over", acceptCanonicalState);
     socket.on("server-message", (value: string) => setMessage(value));
     return socket;
   };

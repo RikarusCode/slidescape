@@ -1,6 +1,6 @@
 import { ChevronDown, Copy, Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Fish, LogOut, Settings, Users, X } from "lucide-react";
 import { HARVEST_CARDS, legalMoves, legalMovesForPiece, PLAYER_COLOR_HEX, type ClientCommand, type GameState, type HarvestPlay, type LegalMove, type Position } from "@slidescape/game";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./Board.js";
 import { RulesButton } from "./RulesDialog.js";
 import { MODE_LABELS, SlidescapeMark } from "./Lobby.js";
@@ -19,6 +19,7 @@ export function GameView({ state, playerId, roomCode, connected, message, send, 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rolling, setRolling] = useState(false);
   const [dieFrame, setDieFrame] = useState(0);
+  const animatedRoll = useRef<string | undefined>(undefined);
   const active = state.players.find((player) => player.id === state.turn.activePlayerId)!;
   const me = state.players.find((player) => player.id === playerId)!;
   const isMyTurn = state.turn.activePlayerId === playerId;
@@ -45,6 +46,15 @@ export function GameView({ state, playerId, roomCode, connected, message, send, 
     const timeout = window.setTimeout(() => setRolling(false), 750);
     return () => { window.clearInterval(interval); window.clearTimeout(timeout); };
   }, [rolling]);
+
+  useEffect(() => {
+    if (!state.turn.rolled) return;
+    const rollKey = `${state.turn.number}:${state.turn.activePlayerId}:${state.turn.rolled}`;
+    if (animatedRoll.current === rollKey) return;
+    animatedRoll.current = rollKey;
+    setDieFrame(0);
+    setRolling(true);
+  }, [state.turn.activePlayerId, state.turn.number, state.turn.rolled]);
 
   const clearSpecial = () => { setSpecialMode(undefined); setSelectedPoop(undefined); };
   const playSimpleCard = () => {

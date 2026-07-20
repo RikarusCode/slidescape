@@ -39,6 +39,7 @@ export interface RoomSnapshot {
   game?: GameState;
   processed: string[];
   disconnectDeadlines: Record<string, number>;
+  botActionAt?: number;
   expiresAt: number;
 }
 

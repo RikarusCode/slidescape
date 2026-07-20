@@ -1,3 +1,5 @@
+import { legalMoves } from "../packages/game/dist/index.js";
+
 const baseUrl = process.env.SLIDESCAPE_URL ?? "http://127.0.0.1:8787";
 const websocketBase = baseUrl.replace(/^http/, "ws");
 const timeoutMs = 6_000;
@@ -101,11 +103,46 @@ const [hostGame, guestGame] = await Promise.all([hostRoom.next("game-state"), gu
 assert(hostGame.id === guestGame.id && hostGame.players.length === 2, "Private game state did not converge.");
 assert(hostGame.turn.timerDeadline > Date.now(), "Private turn alarm deadline was not armed.");
 
+const activePlayerId = hostGame.turn.activePlayerId;
+const activeRoom = activePlayerId === host.playerId ? hostRoom : guestRoom;
+const rolledStates = Promise.all([hostRoom.next("game-state"), guestRoom.next("game-state")]);
+const rollReply = await activeRoom.send("command", {
+  type: "roll",
+  commandId: crypto.randomUUID(),
+  expectedVersion: hostGame.version
+});
+assert(rollReply.ok, `Active player's roll was rejected: ${rollReply.message ?? "unknown error"}`);
+const [hostRolled, guestRolled] = await rolledStates;
+assert(
+  hostRolled.version === guestRolled.version && hostRolled.turn.rolled === guestRolled.turn.rolled,
+  "A roll did not converge to the same canonical state for both players."
+);
+
+const move = legalMoves(hostRolled, activePlayerId)[0];
+assert(move, "Initial rolled turn unexpectedly had no legal move.");
+const movedStates = Promise.all([hostRoom.next("game-state"), guestRoom.next("game-state")]);
+const moveReply = await activeRoom.send("command", {
+  type: "move",
+  commandId: crypto.randomUUID(),
+  expectedVersion: hostRolled.version,
+  move
+});
+assert(moveReply.ok, `Active player's move was rejected: ${moveReply.message ?? "unknown error"}`);
+const [hostMoved, guestMoved] = await movedStates;
+const hostPiece = hostMoved.pieces.find((piece) => piece.id === move.pieceId);
+const guestPiece = guestMoved.pieces.find((piece) => piece.id === move.pieceId);
+assert(
+  hostMoved.version === guestMoved.version &&
+    hostPiece?.position.x === guestPiece?.position.x &&
+    hostPiece?.position.y === guestPiece?.position.y,
+  "A move did not converge to the same canonical state for both players."
+);
+
 hostRoom.socket.close(1000, "Reconnect test");
 const hostReconnect = roomConnection(created.roomId, host);
 await hostReconnect.opened;
 const restored = await hostReconnect.next("game-state");
-assert(restored.id === hostGame.id && restored.version === hostGame.version, "Room reconnect did not restore canonical state.");
+assert(restored.id === hostGame.id && restored.version === hostMoved.version, "Room reconnect did not restore canonical state.");
 
 const queueOne = identity("Queue One");
 const queueTwo = identity("Queue Two");
@@ -122,4 +159,4 @@ const publicLobby = await publicOne.next("lobby-state");
 assert(publicLobby.members.length === 2 && publicLobby.settings.turnTimerSeconds === 90, "Public lobby settings are incorrect.");
 
 for (const active of [guestRoom, hostReconnect, publicOne, publicTwo]) active.socket.close(1000, "Smoke complete");
-console.log(JSON.stringify({ ok: true, privateCode: created.roomId, publicRoomId: firstMatch.roomId, checks: 8 }));
+console.log(JSON.stringify({ ok: true, privateCode: created.roomId, publicRoomId: firstMatch.roomId, checks: 10 }));
