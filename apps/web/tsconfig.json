@@ -3,7 +3,11 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "baseUrl": "../..",
+    "paths": {
+      "@slidescape/game": ["packages/game/src/index.ts"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }
