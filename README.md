@@ -1,86 +1,94 @@
 # Slidescape
 
-Slidescape is a responsive, server-authoritative ice strategy game for two or four players. The React client and multiplayer Worker deploy together on Cloudflare. Public queues use one matchmaking Durable Object per mode, while every private, public, or bot match has its own SQLite-backed room Durable Object.
+Slidescape is a real-time strategy board game about sliding penguins across the ice and escaping them through the opposite side of the board. It supports public matchmaking, code-based private rooms, and single-player matches against bots in three formats:
 
-## Cloudflare architecture
+| Mode     | Players | Setup                         | Win condition         |
+| -------- | ------: | ----------------------------- | --------------------- |
+| Beginner |       2 | One opposing flock per player | Escape 4 penguins     |
+| Standard |       2 | Two flocks per player         | Escape 10 penguins    |
+| Classic  |       4 | One flock per player          | Escape all 6 penguins |
 
-- **Worker Static Assets** serves the Vite application and its artwork.
-- **Matchmaker Durable Objects** serialize each public queue.
-- **GameRoom Durable Objects** own lobby membership, WebSockets, game state, reconnects, bots, and commands.
-- **Durable Object SQLite storage** persists every accepted state change.
-- **WebSocket Hibernation** keeps idle room connections inexpensive.
-- **Durable Object alarms** enforce turn timers, reconnect deadlines, and room cleanup.
+Penguins slide until blocked, while ice blocks move one square at a time. The shared walrus, Fish cards, Poop cards, and the rule that every flock must retain a route to its exit add tactical constraints. The complete rules are available in the application.
 
-KV, D1, Redis, accounts, and application secrets are not required.
+## Features
+
+- Server-authoritative multiplayer over WebSockets
+- Public queues, private six-character room codes, and bot matches
+- Optional 45-second, 90-second, or 3-minute turn timers for private rooms
+- Reconnection support and persisted match state
+- Responsive React interface with animated pieces, score history, and sound controls
+- Deterministic, independently tested game engine shared by the client and server
+
+## Architecture
+
+Slidescape is a pnpm monorepo deployed as one Cloudflare Worker:
+
+- `apps/web` contains the React 19 and Vite client. Its production build is served through Workers Static Assets.
+- `apps/worker` contains the HTTP API, WebSocket protocol, matchmaking, and room coordination.
+- `packages/game` contains the TypeScript rules engine, board configuration, bot logic, and shared protocol types.
+
+Public queues are serialized by one `Matchmaker` Durable Object per game mode. Every match runs in its own `GameRoom` Durable Object, which stores the canonical lobby and game snapshot in SQLite-backed Durable Object storage. Durable Object alarms handle bot pacing, turn deadlines, reconnect forfeits, and inactive-room cleanup; WebSocket Hibernation allows connections to survive object eviction.
+
+The current runtime does not require application secrets or separately provisioned KV, D1, or Redis services.
 
 ## Local development
 
-Requirements: Node.js 22+, pnpm 10+, and Wrangler 4.
+Use Node.js 22, as configured in CI. The workspace pins pnpm 10.12.1.
 
-```powershell
-pnpm install
+```sh
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies `/api`, `/ws`, and `/health` to the local Worker on port `8787`. Local Durable Object data is kept beneath `.wrangler/`.
+Open <http://127.0.0.1:5173>. Vite proxies API, health, and WebSocket traffic to Wrangler on port `8787`. Local Durable Object state is stored under `.wrangler/`.
 
-Useful commands:
+## Commands
 
-- `pnpm dev` — build the shared rules and initial frontend, then run Vite and the local Worker.
-- `pnpm typecheck` — type-check the rules, Worker, Worker integration tests, and web client.
-- `pnpm test` — run all rules, UI utility, protocol, and Durable Object integration tests.
-- `pnpm test:worker` — run the production Worker integration suite inside Cloudflare's local runtime.
-- `pnpm test:smoke` — smoke-test a Worker already running at `http://127.0.0.1:8787`.
-- `pnpm build` — build the rules, web assets, and Worker deployment bundle.
-- `pnpm deploy:dry` — validate the complete Cloudflare deployment without publishing it.
-- `pnpm deploy` — build and publish Slidescape to Cloudflare.
+| Command                | Purpose                                                                    |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `pnpm dev`             | Build shared code and the initial web bundle, then start Vite and Wrangler |
+| `pnpm build`           | Build the rules package, web client, and Worker bundle                     |
+| `pnpm typecheck`       | Type-check all workspaces and Worker integration tests                     |
+| `pnpm test`            | Run unit tests and workerd-backed Worker integration tests                 |
+| `pnpm test:worker`     | Run only the Worker integration suite                                      |
+| `pnpm test:smoke`      | Test a Worker running at `http://127.0.0.1:8787`                           |
+| `pnpm benchmark:rules` | Benchmark initial legal-move generation in all modes                       |
+| `pnpm format:check`    | Check formatting with Prettier                                             |
+| `pnpm deploy:dry`      | Build and validate the Cloudflare deployment without publishing            |
 
-## First deployment
+Set `SLIDESCAPE_URL` to run the smoke test against another Worker URL.
 
-Authenticate once:
+## Deployment
 
-```powershell
+Authenticate Wrangler, validate the deployment, and publish:
+
+```sh
 pnpm wrangler login
-pnpm wrangler whoami
-```
-
-Then deploy:
-
-```powershell
+pnpm deploy:dry
 pnpm deploy
 ```
 
-If Wrangler reports a certificate-chain error on a Windows network that inspects HTTPS traffic, retry with the Windows certificate store enabled:
+[`wrangler.jsonc`](./wrangler.jsonc) defines the Worker, static assets, observability, and both SQLite-backed Durable Object classes. Wrangler creates the required namespaces during deployment; no separate storage setup is needed.
 
-```powershell
-$env:NODE_OPTIONS='--use-system-ca'
-pnpm deploy
-```
+After changing Worker bindings, regenerate and check the environment types:
 
-Wrangler reads [`wrangler.jsonc`](./wrangler.jsonc) and automatically provisions the two SQLite-backed Durable Object namespaces. It also uploads `apps/web/dist` and returns the new `workers.dev` URL. No dashboard storage setup is necessary.
-
-Check production health and logs:
-
-```powershell
-Invoke-RestMethod https://YOUR-WORKER.workers.dev/health
-pnpm wrangler tail slidescape
-```
-
-To use a custom domain, open **Cloudflare Dashboard → Workers & Pages → slidescape → Settings → Domains & Routes → Add → Custom Domain**. Cloudflare provisions HTTPS automatically.
-
-## Configuration policy
-
-Treat `wrangler.jsonc` as the production source of truth. After changing bindings, regenerate and verify environment types:
-
-```powershell
+```sh
 pnpm wrangler types apps/worker/src/worker-configuration.d.ts
 pnpm wrangler types apps/worker/src/worker-configuration.d.ts --check
 ```
 
-Do not commit `.dev.vars`, credentials, API tokens, or other secrets. Slidescape currently needs no runtime secrets.
+Runtime health is exposed at `GET /health`. Do not commit `.dev.vars`, credentials, or API tokens.
 
-## Project structure
+## Project layout
 
-- `packages/game` — deterministic rules, board configuration, cards, protocol types, and tests.
-- `apps/worker` — Cloudflare Worker, matchmaking, room Durable Objects, persistence, alarms, and WebSockets.
-- `apps/web` — responsive React/Vite client.
+```text
+apps/
+  web/       React client and static assets
+  worker/    Cloudflare Worker and Durable Objects
+packages/
+  game/      Rules engine, bots, shared types, and unit tests
+scripts/     Smoke test and rules benchmark
+docs/        Performance and maintainability audit
+```
+
+Slidescape is an independent fan-made project inspired by the [Chickapig board game](https://www.chickapig.com/chickapig). It is not affiliated with or endorsed by Chickapig or its creators.
