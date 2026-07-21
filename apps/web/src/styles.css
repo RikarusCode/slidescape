@@ -1534,15 +1534,15 @@ a:focus-visible {
   stroke-linecap: butt;
   pointer-events: none;
 }
-.walrus-fence {
+.elephant-seal-fence {
   pointer-events: none;
 }
-.walrus-fence-frame {
+.elephant-seal-fence-frame {
   fill: rgba(214, 239, 250, 0.76);
   stroke: #168fca;
   stroke-width: 0.1;
 }
-.walrus-fence-ice {
+.elephant-seal-fence-ice {
   fill: rgba(255, 255, 255, 0.34);
   stroke: #65bddf;
   stroke-width: 0.035;
@@ -1684,17 +1684,17 @@ a:focus-visible {
   background: #e4f8fe;
   margin-bottom: 0.6rem;
 }
-.walrus-actions {
+.elephant-seal-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
 }
-.walrus-choice {
+.elephant-seal-choice {
   background: white;
   color: var(--muted);
   border-color: #a9c8d5;
 }
-.walrus-choice.selected {
+.elephant-seal-choice.selected {
   background: #e4f8fe;
   color: #075e78;
   border-color: #4eb6d7;
@@ -1827,18 +1827,105 @@ a:focus-visible {
 .fish-card button {
   width: 100%;
   min-width: 0;
-  border: 1px solid #75c6df;
+  min-height: 42px;
+  border: 1px solid #59b5d4;
   color: #075e78;
-  background: white;
+  background: linear-gradient(180deg, #ffffff, #edfaff);
   border-radius: 8px;
   padding: 0.55rem;
   font-weight: 800;
   white-space: normal;
+  cursor: pointer;
+  box-shadow: 0 2px 0 rgba(31, 126, 159, 0.16);
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.fish-card button:hover:not(:disabled) {
+  border-color: #278faf;
+  background: #dff6fd;
+  box-shadow: 0 3px 0 rgba(31, 126, 159, 0.2);
+}
+.fish-card button:focus-visible {
+  outline: 2px solid rgba(34, 139, 180, 0.42);
+  outline-offset: 2px;
+}
+.fish-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+  box-shadow: none;
 }
 .card-actions {
   grid-column: 1 / -1;
   display: grid;
   gap: 0.45rem;
+}
+.card-actions.two-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.fish-choice-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+.fish-choice-button svg {
+  flex: none;
+}
+.fish-card-feedback {
+  grid-column: 1 / -1;
+  margin: 0 0 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #e4a278;
+  border-radius: 8px;
+  background: #fff4ec;
+  color: #8b3d25;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+.fish-target-picker {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed #8fcadf;
+}
+.fish-target-picker > span {
+  color: #34536f;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.fish-target-picker button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  text-align: left;
+}
+.fish-target-picker .player-token {
+  width: 24px;
+  height: 24px;
+}
+.fish-target-picker button span:last-child,
+.fish-target-picker button strong,
+.fish-target-picker button small {
+  display: block;
+  min-width: 0;
+}
+.fish-target-picker button small {
+  margin-top: 0.1rem;
+  color: #5d7890;
+  font-size: 0.69rem;
+}
+@media (max-width: 430px) {
+  .card-actions.two-options {
+    grid-template-columns: 1fr;
+  }
 }
 .empty-card {
   color: var(--muted);
@@ -2188,7 +2275,7 @@ a:focus-visible {
     border-radius: 17px;
   }
   .play-row,
-  .walrus-actions {
+  .elephant-seal-actions {
     grid-template-columns: 1fr;
   }
   .game-header {

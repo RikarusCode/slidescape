@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { CircleHelp, Fish, Footprints, Goal, Snowflake, X } from "lucide-react";
 import { COLOR_HEX } from "@slidescape/game";
-import { IceBlockGlyph, PenguinGlyph, PoopGlyph, WalrusGlyph } from "./PieceGlyphs.js";
+import { ElephantSealGlyph, IceBlockGlyph, PenguinGlyph, PoopGlyph } from "./PieceGlyphs.js";
 import { audio } from "../audio.js";
 
 function RulesArtwork() {
@@ -22,9 +22,9 @@ function RulesArtwork() {
       </figure>
       <figure>
         <svg viewBox="0 0 1 1">
-          <WalrusGlyph facing="up" />
+          <ElephantSealGlyph facing="up" />
         </svg>
-        <figcaption>Walrus</figcaption>
+        <figcaption>Elephant seal</figcaption>
       </figure>
       <figure>
         <svg viewBox="0 0 1 1">
@@ -110,35 +110,37 @@ export function RulesButton({ className = "" }: { className?: string }) {
                 </p>
                 <p>
                   When a penguin moves, it keeps sliding until it hits a solid object like another penguin or
-                  an ice block, walrus, fence, board edge, or side of an exit. Any movement in one direction
-                  costs one move.
+                  an ice block, elephant seal, fence, board edge, or side of an exit. Any movement in one
+                  direction costs one move.
                 </p>
                 <p>
-                  Unlike penguins, an ice block or walrus (once freed) moves exactly one square per move. You
-                  control only your own ice blocks and penguins, but the walrus is neutral and shared.
+                  Unlike penguins, an ice block or elephant seal (once freed) moves exactly one square per
+                  move. You control only your own ice blocks and penguins, but the elephant seal is neutral
+                  and shared.
                 </p>
                 <div className="rule-callout">
                   A move is illegal if it leaves an active flock with no possible route to its own exit. A
                   temporary block is allowed if the affected player can eventually reopen it using one of
-                  their pieces or the walrus.
+                  their pieces or the elephant seal.
                 </div>
               </section>
 
-              <section id="rules-walrus" className="rules-section">
+              <section id="rules-elephant-seal" className="rules-section">
                 <div className="rules-section-title">
                   <Snowflake />
                   <div>
-                    <h3>Walrus and poop</h3>
+                    <h3>Elephant seal and poop</h3>
                   </div>
                 </div>
                 <div className="rules-grid">
                   <div>
                     <h4>Roll of one</h4>
                     <p>
-                      On a roll of one, choose either a normal move or relocate the walrus to any open square,
-                      optionally leaving poop underneath it. Before the first relocation, the walrus is locked
-                      inside its center fence and cannot be moved. If all eight poop tokens are already out
-                      and you choose to poop, select one existing token and recycle it beneath the walrus.
+                      On a roll of one, choose either a normal move or relocate the elephant seal to any open
+                      square, optionally leaving poop underneath it. Before the first relocation, the elephant
+                      seal is locked inside its center fence and cannot be moved. If all eight poop tokens are
+                      already out and you choose to poop, select one existing token and recycle it beneath the
+                      elephant seal.
                     </p>
                   </div>
                   <div>
@@ -169,11 +171,17 @@ export function RulesButton({ className = "" }: { className?: string }) {
                   be played on the turn that they are received. All fish cards are helpful, so use them
                   wisely.
                 </p>
+                <p>
+                  You may play a Fish card you already hold before trading a natural roll of two for a new
+                  one. If that card adds two moves, the trade spends only the rolled two moves; its two bonus
+                  moves remain available after you draw the replacement card.
+                </p>
                 <div className="rule-callout">
-                  A Flyover can cross one penguin, ice block, or unfenced walrus, including one directly
-                  beside the moving penguin, as long as the square immediately beyond it is open. After the
-                  jump, the penguin keeps sliding and stops normally before any later obstacle. Two adjacent
-                  obstacles cannot be flown over because there is no open landing square between them.
+                  A Flyover can cross one penguin, ice block, or unfenced elephant seal, including one
+                  directly beside the moving penguin, as long as the square immediately beyond it is open.
+                  After the jump, the penguin keeps sliding and stops normally before any later obstacle. Two
+                  adjacent obstacles cannot be flown over because there is no open landing square between
+                  them.
                 </div>
               </section>
 
@@ -187,8 +195,8 @@ export function RulesButton({ className = "" }: { className?: string }) {
                 <div className="clarification-list">
                   <p>
                     <strong>Using a fish card to double a roll </strong>makes it two separate moves. For
-                    natural rolls of 1, either or both may be used to relocate the walrus, and each relocation
-                    may leave poop.
+                    natural rolls of 1, either or both may be used to relocate the elephant seal, and each
+                    relocation may leave poop.
                   </p>
                   <p>
                     <strong>Crossing poop </strong>on a would-be winning slide still queues every card. The

@@ -146,8 +146,8 @@ export function createGame(
     );
   }
   pieces.push({
-    id: "walrus",
-    kind: "walrus",
+    id: "elephant-seal",
+    kind: "elephant-seal",
     position: { x: 6, y: 6 },
     facing: "down"
   });
@@ -156,7 +156,7 @@ export function createGame(
   const [fishDeck, afterFish] = shuffle(expandedFishDeck(), afterFirstPlayer);
   const [poopDeck, afterPoop] = shuffle(expandedPoopDeck(), afterFish);
   const state: GameState = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     id,
     mode,
     status: "playing",
@@ -190,6 +190,31 @@ export function activePlayer(state: GameState): PlayerState {
   return player;
 }
 
+/** Upgrade room snapshots created before the elephant-seal theme update. */
+export function migrateGameState(state: GameState): GameState {
+  const stored = state as unknown as {
+    schemaVersion: number;
+    pieces: Array<{ id: string; kind: string }>;
+    turn: Record<string, unknown>;
+    log: string[];
+  };
+  if (stored.schemaVersion >= 5) return state;
+
+  const legacyPieceName = ["wal", "rus"].join("");
+  for (const piece of stored.pieces) {
+    if (piece.id === legacyPieceName) piece.id = "elephant-seal";
+    if (piece.kind === legacyPieceName) piece.kind = "elephant-seal";
+  }
+  const legacyRelocationsKey = `${legacyPieceName}RelocationsRemaining`;
+  if (legacyRelocationsKey in stored.turn) {
+    stored.turn.elephantSealRelocationsRemaining = stored.turn[legacyRelocationsKey];
+    delete stored.turn[legacyRelocationsKey];
+  }
+  stored.log = stored.log.map((entry) => entry.replace(new RegExp(legacyPieceName, "gi"), "elephant seal"));
+  stored.schemaVersion = 5;
+  return stored as unknown as GameState;
+}
+
 function occupied(state: GameState, except?: string): Map<string, Piece> {
   const result = new Map(
     state.pieces
@@ -197,8 +222,8 @@ function occupied(state: GameState, except?: string): Map<string, Piece> {
       .map((piece) => [key(piece.position), piece])
   );
   if (state.fenceActive) {
-    const walrus = state.pieces.find((piece) => piece.kind === "walrus")!;
-    for (const position of FENCE_POSITIONS) result.set(key(position), walrus);
+    const elephantSeal = state.pieces.find((piece) => piece.kind === "elephant-seal")!;
+    for (const position of FENCE_POSITIONS) result.set(key(position), elephantSeal);
   }
   return result;
 }
@@ -266,8 +291,8 @@ function penguinMove(
       if (
         flyover &&
         !ignored &&
-        ["penguin", "ice", "walrus"].includes(blocker.kind) &&
-        !(blocker.kind === "walrus" && state.fenceActive) &&
+        ["penguin", "ice", "elephant-seal"].includes(blocker.kind) &&
+        !(blocker.kind === "elephant-seal" && state.fenceActive) &&
         hasOpenFlyoverLanding(next, direction, blockers)
       ) {
         ignored = true;
@@ -343,7 +368,8 @@ function allPlayersRetainGoalAccess(state: GameState, move: LegalMove): boolean 
       const isMovingPiece = piece.id === move.pieceId;
       if (piece.scored || (isMovingPiece && move.scores)) continue;
       const position = isMovingPiece ? move.to : piece.position;
-      if (piece.kind !== "walrus" && piece.ownerId !== player.id) hardBlockers.add(cellIndex(position));
+      if (piece.kind !== "elephant-seal" && piece.ownerId !== player.id)
+        hardBlockers.add(cellIndex(position));
       if (piece.kind === "penguin" && piece.ownerId === player.id && piece.color)
         penguins.push({ color: piece.color, position });
     }
@@ -361,7 +387,7 @@ function allPlayersRetainGoalAccess(state: GameState, move: LegalMove): boolean 
 }
 
 function moveActorAllowed(state: GameState, piece: Piece, actorId: string): boolean {
-  if (piece.kind === "walrus") return !state.fenceActive && state.turn.rolled !== 1;
+  if (piece.kind === "elephant-seal") return !state.fenceActive && state.turn.rolled !== 1;
   if (piece.ownerId === actorId) return true;
   return state.turn.forcedPieceOwnerIds?.[0] === piece.ownerId;
 }
@@ -380,7 +406,8 @@ export function legalMoves(state: GameState, actorId = state.turn.activePlayerId
   const moves: LegalMove[] = [];
   for (const piece of state.pieces) {
     if (piece.scored || !moveActorAllowed(state, piece, actorId)) continue;
-    if (preRollOpponentMove && (piece.ownerId !== forcedPieceOwnerId || piece.kind === "walrus")) continue;
+    if (preRollOpponentMove && (piece.ownerId !== forcedPieceOwnerId || piece.kind === "elephant-seal"))
+      continue;
     for (const direction of DIRECTIONS) {
       const canFlyover =
         piece.kind === "penguin" && piece.ownerId === active.id && active.effects.flyoverCharges > 0;
@@ -398,7 +425,7 @@ export function legalMoves(state: GameState, actorId = state.turn.activePlayerId
 export function legalMovesForPiece(state: GameState, pieceId: string): LegalMove[] {
   const piece = state.pieces.find((candidate) => candidate.id === pieceId && !candidate.scored);
   if (!piece) return [];
-  if (piece.kind === "walrus" && (state.fenceActive || state.turn.rolled === 1)) return [];
+  if (piece.kind === "elephant-seal" && (state.fenceActive || state.turn.rolled === 1)) return [];
   const blockers = occupied(state);
   const poopCells = new Set(state.poop.map(key));
   return DIRECTIONS.flatMap((direction) => {
@@ -484,7 +511,7 @@ export function roll(state: GameState, actorId: string): GameState {
   next.turn.fishForbidden = forcedTwo;
   next.turn.movesRemaining = rolled;
   next.turn.fishDrawAvailable = rolled === 2 && !forcedTwo;
-  next.turn.walrusRelocationsRemaining = rolled === 1 ? 1 : 0;
+  next.turn.elephantSealRelocationsRemaining = rolled === 1 ? 1 : 0;
   next.turn.phase = "moving";
   next.version += 1;
   next.log.push(`${player.name} rolled ${rolled}.`);
@@ -502,11 +529,14 @@ export function drawFish(state: GameState, actorId: string): GameState {
   if (next.fishDeck.length === 0) next.fishDeck = expandedFishDeck();
   player.fishCard = next.fishDeck.shift();
   player.fishDrawnTurn = next.turn.number;
-  next.turn.movesRemaining = 0;
+  // Drawing trades only the untouched natural two. Bonus moves granted by a
+  // previously held Fish card remain available for the rest of this turn.
+  next.turn.movesRemaining -= 2;
   next.turn.fishDrawAvailable = false;
-  next.version += 1;
   next.log.push(`${player.name} drew a Fish card.`);
-  return endTurn(next, actorId);
+  if (next.turn.movesRemaining === 0) return endTurn(next, actorId);
+  next.version += 1;
+  return next;
 }
 
 export function move(state: GameState, actorId: string, requested: LegalMove): GameState {
@@ -569,7 +599,9 @@ function declareWinnerWhenPoopIsClear(state: GameState): void {
 export function playFish(state: GameState, actorId: string, play: FishPlay): GameState {
   const next = structuredClone(state);
   const player = activePlayer(next);
-  if (player.id !== actorId || next.turn.phase !== "moving")
+  const stealsBeforeRolling =
+    next.turn.phase === "awaiting-roll" && play.cardId === "steal-or-two" && play.choice === "steal";
+  if (player.id !== actorId || (next.turn.phase !== "moving" && !stealsBeforeRolling))
     throw new Error("Fish cards are played during your turn.");
 
   const pending = next.turn.pendingFishChoice;
@@ -580,16 +612,17 @@ export function playFish(state: GameState, actorId: string, play: FishPlay): Gam
       throw new Error("Choose one of the available Fish card effects.");
     if (play.choice === "avoid") {
       if (pending.cardId !== "avoid-or-two" || next.turn.pendingPoop.length === 0)
-        throw new Error("There is no Poop consequence to block.");
+        throw new Error("No consequence to avoid.");
       next.turn.movesRemaining = Math.max(0, next.turn.movesRemaining - 2);
       returnPoopCard(next, next.turn.pendingPoop.shift()!);
     }
     if (play.choice === "steal") {
       if (pending.cardId !== "steal-or-two") throw new Error("That effect is not available.");
       const target = next.players.find(
-        (candidate) => candidate.id === play.targetPlayerId && candidate.fishCard
+        (candidate) => candidate.id !== actorId && candidate.id === play.targetPlayerId
       );
-      if (!target?.fishCard) throw new Error("That opponent has no Fish card.");
+      if (!target) throw new Error("Choose another player to steal from.");
+      if (!target.fishCard) throw new Error("Player has no Fish cards.");
       next.turn.movesRemaining = Math.max(0, next.turn.movesRemaining - 2);
       player.fishCard = target.fishCard;
       player.fishDrawnTurn = target.fishDrawnTurn;
@@ -624,27 +657,33 @@ export function playFish(state: GameState, actorId: string, play: FishPlay): Gam
     next.log.push(`${player.name} played a Fish card.`);
     return next;
   }
-  if (play.cardId === "flyover") player.effects.flyoverCharges += 1;
+  if (play.cardId === "flyover") {
+    if (next.turn.movesRemaining <= 0) throw new Error("No penguin move remains for Flyover.");
+    player.effects.flyoverCharges += 1;
+    if (!legalMoves(next, actorId).some((candidate) => candidate.usesFlyover))
+      throw new Error("No obstacle can be flown over right now.");
+  }
   if (play.cardId === "avoid-or-two") {
     if (play.choice === "avoid") {
-      const avoided = next.turn.pendingPoop.shift();
-      if (avoided) returnPoopCard(next, avoided);
-      else player.effects.avoidPoopCharges += 1;
+      if (next.turn.pendingPoop.length === 0) throw new Error("No consequence to avoid.");
+      returnPoopCard(next, next.turn.pendingPoop.shift()!);
     } else if (play.choice === "two") next.turn.movesRemaining += 2;
+    else throw new Error("Choose a Fish card effect.");
   }
   if (play.cardId === "double-roll") {
     if (!next.turn.rolled) throw new Error("Roll before doubling it.");
     next.turn.movesRemaining += next.turn.rolled;
     if (next.turn.rolled === 1)
-      next.turn.walrusRelocationsRemaining = (next.turn.walrusRelocationsRemaining ?? 0) + 1;
+      next.turn.elephantSealRelocationsRemaining = (next.turn.elephantSealRelocationsRemaining ?? 0) + 1;
   }
   if (play.cardId === "steal-or-two") {
     if (play.choice === "two") next.turn.movesRemaining += 2;
-    else {
+    else if (play.choice === "steal") {
       const target = next.players.find(
-        (candidate) => candidate.id === play.targetPlayerId && candidate.fishCard
+        (candidate) => candidate.id !== actorId && candidate.id === play.targetPlayerId
       );
-      if (!target?.fishCard) throw new Error("That opponent has no Fish card.");
+      if (!target) throw new Error("Choose another player to steal from.");
+      if (!target.fishCard) throw new Error("Player has no Fish cards.");
       const own = player.fishCard;
       player.fishCard = target.fishCard;
       player.fishDrawnTurn = target.fishDrawnTurn;
@@ -654,11 +693,11 @@ export function playFish(state: GameState, actorId: string, play: FishPlay): Gam
         next.fishDeck.push(own);
         [next.fishDeck, next.seed] = shuffle(next.fishDeck, next.seed);
       }
-    }
+    } else throw new Error("Choose a Fish card effect.");
   }
   if (play.cardId === "move-opponent") {
     const piece = next.pieces.find((candidate) => candidate.id === play.move.pieceId);
-    if (!piece || piece.ownerId === actorId || piece.kind === "walrus")
+    if (!piece || piece.ownerId === actorId || piece.kind === "elephant-seal")
       throw new Error("Choose an opponent's penguin or ice block.");
     const legal = legalMovesForPiece(next, piece.id).find(
       (candidate) => candidate.direction === play.move.direction && same(candidate.to, play.move.to)
@@ -675,7 +714,8 @@ export function playFish(state: GameState, actorId: string, play: FishPlay): Gam
   }
   if (play.cardId === "relocate-and-roll") {
     if (next.turn.movesRemaining !== 0) throw new Error("Finish the current roll first.");
-    if (play.poopFrom && play.poopTo) {
+    if (next.poop.length > 0) {
+      if (!play.poopFrom || !play.poopTo) throw new Error("Choose an existing poop and an open destination.");
       const index = next.poop.findIndex((poop) => same(poop, play.poopFrom!));
       if (
         index < 0 ||
@@ -685,13 +725,13 @@ export function playFish(state: GameState, actorId: string, play: FishPlay): Gam
       )
         throw new Error("Choose an existing poop and an open destination.");
       next.poop[index] = { ...play.poopTo };
-    }
+    } else if (play.poopFrom || play.poopTo) throw new Error("There is no poop to relocate.");
     const [value, seed] = nextRandom(next.seed);
     next.seed = seed;
     next.turn.rolled = Math.floor(value * 6) + 1;
     next.turn.movesRemaining = next.turn.rolled;
     next.turn.fishDrawAvailable = next.turn.rolled === 2;
-    next.turn.walrusRelocationsRemaining = next.turn.rolled === 1 ? 1 : 0;
+    next.turn.elephantSealRelocationsRemaining = next.turn.rolled === 1 ? 1 : 0;
   }
   if (play.cardId !== "steal-or-two" || play.choice === "two") returnFish(next, player);
   declareWinnerWhenPoopIsClear(next);
@@ -768,6 +808,7 @@ function nextTurn(state: GameState): void {
 }
 
 function finishTurnAfterPoop(state: GameState, player: PlayerState): void {
+  player.effects.flyoverCharges = 0;
   if (player.score >= SCORE_TARGET[state.mode]) {
     declareWinner(state, player);
   } else nextTurn(state);
@@ -821,7 +862,7 @@ export function resolvePoopChoice(
   return next;
 }
 
-export function placeWalrusAndPoop(
+export function placeElephantSealAndPoop(
   state: GameState,
   actorId: string,
   to: Position,
@@ -833,14 +874,15 @@ export function placeWalrusAndPoop(
     player.id !== actorId ||
     next.turn.phase !== "moving" ||
     next.turn.movesRemaining < 1 ||
-    (next.turn.walrusRelocationsRemaining ?? 0) < 1
+    (next.turn.elephantSealRelocationsRemaining ?? 0) < 1
   )
-    throw new Error("The walrus can be relocated only with an unused walrus action from a roll of one.");
+    throw new Error(
+      "The elephant seal can be relocated only with an unused elephant seal action from a roll of one."
+    );
   if (next.turn.pendingFishChoice) throw new Error("Choose the Fish card effect first.");
-  if (!inside(to) || occupied(next, "walrus").has(key(to))) throw new Error("Choose an open square.");
-  const walrus = next.pieces.find((piece) => piece.kind === "walrus")!;
-  walrus.facing = facingToward(walrus.position, to, walrus.facing);
-  walrus.position = { ...to };
+  if (!inside(to) || occupied(next, "elephant-seal").has(key(to))) throw new Error("Choose an open square.");
+  const elephantSeal = next.pieces.find((piece) => piece.kind === "elephant-seal")!;
+  elephantSeal.position = { ...to };
   next.moveNumber = (next.moveNumber ?? 0) + 1;
   next.fenceActive = false;
   if (options.leavePoop !== false && !next.poop.some((poop) => same(poop, to))) {
@@ -849,14 +891,19 @@ export function placeWalrusAndPoop(
       next.poopSupply -= 1;
     } else {
       const index = options.poopFrom ? next.poop.findIndex((poop) => same(poop, options.poopFrom!)) : -1;
-      if (index < 0) throw new Error("Choose a poop token to recycle under the walrus.");
+      if (index < 0) throw new Error("Choose a poop token to recycle under the elephant seal.");
       next.poop[index] = { ...to };
     }
   }
   next.turn.movesRemaining = Math.max(0, next.turn.movesRemaining - 1);
-  next.turn.walrusRelocationsRemaining = Math.max(0, (next.turn.walrusRelocationsRemaining ?? 0) - 1);
+  next.turn.elephantSealRelocationsRemaining = Math.max(
+    0,
+    (next.turn.elephantSealRelocationsRemaining ?? 0) - 1
+  );
   next.turn.fishDrawAvailable = false;
   next.version += 1;
-  next.log.push(`${player.name} relocated the walrus${options.leavePoop === false ? "" : " and left poop"}.`);
+  next.log.push(
+    `${player.name} relocated the elephant seal${options.leavePoop === false ? "" : " and left poop"}.`
+  );
   return next;
 }

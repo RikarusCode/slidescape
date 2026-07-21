@@ -8,8 +8,11 @@ import {
   Dice5,
   Dice6,
   Fish,
+  Hand,
   LogOut,
+  Plus,
   Settings,
+  ShieldCheck,
   Signal,
   Users,
   X
@@ -43,7 +46,7 @@ type CommandInput = ClientCommand extends infer Command
     ? Omit<Command, "commandId" | "expectedVersion">
     : never
   : never;
-type SpecialMode = "walrus-poop" | "walrus-only" | "opponent" | "poop";
+type SpecialMode = "elephant-seal-poop" | "elephant-seal-only" | "opponent" | "poop";
 const DIE_ICONS = [Dice1, Dice2, Dice3, Dice4, Dice5, Dice6] as const;
 
 export function GameView({
@@ -73,6 +76,7 @@ export function GameView({
   const [dieFrame, setDieFrame] = useState(0);
   const [revealQueue, setRevealQueue] = useState<CardReveal[]>([]);
   const [returnPieceId, setReturnPieceId] = useState<string>();
+  const [stealPickerOpen, setStealPickerOpen] = useState(false);
   const animatedRoll = useRef<string | undefined>(undefined);
   const knownReveals = useRef(new Set((state.cardReveals ?? []).map((reveal) => reveal.id)));
   const previousPieces = useRef(
@@ -97,8 +101,15 @@ export function GameView({
     [connected, state, playerId]
   );
   const card = FISH_CARDS.find((definition) => definition.id === me.fishCard);
-  const stealTargets = useMemo(
-    () => state.players.filter((player) => player.id !== playerId && player.fishCard),
+  const heldFishReady =
+    connected && isMyTurn && me.fishDrawnTurn !== state.turn.number && !state.turn.pendingFishChoice;
+  const canUseRolledFish = heldFishReady && state.turn.phase === "moving";
+  const canStealFish =
+    heldFishReady && (state.turn.phase === "awaiting-roll" || state.turn.phase === "moving");
+  const fishFeedback =
+    message && /(fish|card|consequence|poop|another player)/i.test(message) ? message : undefined;
+  const stealOpponents = useMemo(
+    () => state.players.filter((player) => player.id !== playerId),
     [playerId, state.players]
   );
   const specialSelectableIds = useMemo(
@@ -109,7 +120,7 @@ export function GameView({
               (piece) =>
                 !piece.scored &&
                 piece.ownerId !== playerId &&
-                piece.kind !== "walrus" &&
+                piece.kind !== "elephant-seal" &&
                 legalMovesForPiece(state, piece.id).length > 0
             )
             .map((piece) => piece.id)
@@ -173,13 +184,13 @@ export function GameView({
     state.turn.phase === "moving" &&
     !state.turn.pendingFishChoice &&
     (state.turn.movesRemaining === 0 || available.length === 0);
-  const canRelocateWalrus =
+  const canRelocateElephantSeal =
     connected &&
     isMyTurn &&
     state.turn.phase === "moving" &&
     !state.turn.pendingFishChoice &&
     state.turn.movesRemaining > 0 &&
-    (state.turn.walrusRelocationsRemaining ?? 0) > 0;
+    (state.turn.elephantSealRelocationsRemaining ?? 0) > 0;
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -234,7 +245,7 @@ export function GameView({
       const localSound = locallySoundedPiece.current;
       locallySoundedPiece.current = undefined;
       if (!localSound || localSound.id !== moved.id || localSound.expiresAt < performance.now()) {
-        audio.play(moved.kind === "penguin" ? "slide" : moved.kind === "ice" ? "ice" : "walrus");
+        audio.play(moved.kind === "penguin" ? "slide" : moved.kind === "ice" ? "ice" : "elephant-seal");
       }
     }
 
@@ -279,6 +290,10 @@ export function GameView({
   }, [connected, isMyTurn]);
 
   useEffect(() => {
+    setStealPickerOpen(false);
+  }, [isMyTurn, me.fishCard, state.turn.number]);
+
+  useEffect(() => {
     setReturnPieceId(pendingChoice?.options[0]?.pieceId);
   }, [pendingChoice?.playerId, pendingChoice?.cardId, pendingChoice?.options]);
 
@@ -286,7 +301,9 @@ export function GameView({
     setSpecialMode(undefined);
     setSelectedPoop(undefined);
   }, []);
-  const chooseWalrusMode = (mode: Extract<SpecialMode, "walrus-poop" | "walrus-only">) => {
+  const chooseElephantSealMode = (
+    mode: Extract<SpecialMode, "elephant-seal-poop" | "elephant-seal-only">
+  ) => {
     setSelectedId(undefined);
     setSelectedPoop(undefined);
     setSpecialMode(mode);
@@ -296,7 +313,10 @@ export function GameView({
       if (!isMyTurn) return;
       if (specialMode === "opponent" && !specialSelectableIds?.includes(pieceId)) return;
       const piece = state.pieces.find((candidate) => candidate.id === pieceId);
-      if ((specialMode === "walrus-poop" || specialMode === "walrus-only") && piece?.kind === "penguin")
+      if (
+        (specialMode === "elephant-seal-poop" || specialMode === "elephant-seal-only") &&
+        piece?.kind === "penguin"
+      )
         clearSpecial();
       setSelectedId(pieceId);
     },
@@ -327,22 +347,19 @@ export function GameView({
         id: piece.id,
         expiresAt: performance.now() + 1_500
       };
-      audio.play(piece.kind === "penguin" ? "slide" : piece.kind === "ice" ? "ice" : "walrus");
+      audio.play(piece.kind === "penguin" ? "slide" : piece.kind === "ice" ? "ice" : "elephant-seal");
     },
     [state.pieces]
   );
 
-  const startChoiceCard = (cardId: "avoid-or-two" | "steal-or-two") => {
-    dispatch({ type: "play-fish", play: { cardId, choice: "start" } });
-  };
-
   const chooseEmptyCell = useCallback(
     (position: Position) => {
-      if (specialMode === "walrus-only") dispatch({ type: "place-walrus", to: position, leavePoop: false });
-      if (specialMode === "walrus-poop") {
+      if (specialMode === "elephant-seal-only")
+        dispatch({ type: "place-elephant-seal", to: position, leavePoop: false });
+      if (specialMode === "elephant-seal-poop") {
         if (state.poopSupply === 0 && !selectedPoop) return;
         dispatch({
-          type: "place-walrus",
+          type: "place-elephant-seal",
           to: position,
           leavePoop: true,
           poopFrom: selectedPoop
@@ -380,12 +397,12 @@ export function GameView({
   );
 
   const instruction =
-    specialMode === "walrus-poop"
+    specialMode === "elephant-seal-poop"
       ? state.poopSupply === 0 && !selectedPoop
-        ? "Choose a poop to recycle, then choose the walrus destination."
-        : "Choose an open square for the walrus."
-      : specialMode === "walrus-only"
-        ? "Choose an open square for the walrus."
+        ? "Choose a poop to recycle, then choose the elephant seal destination."
+        : "Choose an open square for the elephant seal."
+      : specialMode === "elephant-seal-only"
+        ? "Choose an open square for the elephant seal."
         : specialMode === "poop"
           ? selectedPoop
             ? "Choose an open square for that poop."
@@ -477,7 +494,8 @@ export function GameView({
           specialSelectableIds={specialSelectableIds}
           onMove={moveBoardPiece}
           onPoopSelect={
-            isMyTurn && (specialMode === "poop" || (specialMode === "walrus-poop" && state.poopSupply === 0))
+            isMyTurn &&
+            (specialMode === "poop" || (specialMode === "elephant-seal-poop" && state.poopSupply === 0))
               ? setSelectedPoop
               : undefined
           }
@@ -535,19 +553,19 @@ export function GameView({
                 {connected ? "Roll the die" : "Waiting for connection…"}
               </button>
             ) : null}
-            {canRelocateWalrus ? (
-              <div className="walrus-actions">
+            {canRelocateElephantSeal ? (
+              <div className="elephant-seal-actions">
                 <button
-                  className={`fish-action walrus-choice ${specialMode === "walrus-poop" ? "selected" : ""}`.trim()}
-                  aria-pressed={specialMode === "walrus-poop"}
-                  onClick={() => chooseWalrusMode("walrus-poop")}
+                  className={`fish-action elephant-seal-choice ${specialMode === "elephant-seal-poop" ? "selected" : ""}`.trim()}
+                  aria-pressed={specialMode === "elephant-seal-poop"}
+                  onClick={() => chooseElephantSealMode("elephant-seal-poop")}
                 >
-                  Relocate walrus + poop
+                  Relocate elephant seal + poop
                 </button>
                 <button
-                  className={`fish-action walrus-choice ${specialMode === "walrus-only" ? "selected" : ""}`.trim()}
-                  aria-pressed={specialMode === "walrus-only"}
-                  onClick={() => chooseWalrusMode("walrus-only")}
+                  className={`fish-action elephant-seal-choice ${specialMode === "elephant-seal-only" ? "selected" : ""}`.trim()}
+                  aria-pressed={specialMode === "elephant-seal-only"}
+                  onClick={() => chooseElephantSealMode("elephant-seal-only")}
                 >
                   Relocate without poop
                 </button>
@@ -559,7 +577,7 @@ export function GameView({
                 disabled={!connected}
                 onClick={() => dispatch({ type: "draw-fish" })}
               >
-                <Fish size={18} /> Take a Fish card instead
+                <Fish size={18} /> Trade the rolled 2 for a Fish card
               </button>
             ) : null}
             <button className="end-turn" disabled={!canEnd} onClick={() => dispatch({ type: "end-turn" })}>
@@ -623,7 +641,7 @@ export function GameView({
                   >
                     Keep 2 moves
                   </button>
-                  {pendingFishChoice.cardId === "avoid-or-two" && state.turn.pendingPoop.length > 0 ? (
+                  {pendingFishChoice.cardId === "avoid-or-two" ? (
                     <button
                       disabled={!connected}
                       onClick={() =>
@@ -633,11 +651,11 @@ export function GameView({
                         })
                       }
                     >
-                      Block one Poop instead
+                      <ShieldCheck size={16} /> Avoid Poop effect instead
                     </button>
                   ) : null}
                   {pendingFishChoice.cardId === "steal-or-two"
-                    ? stealTargets.map((target) => (
+                    ? stealOpponents.map((target) => (
                         <button
                           key={target.id}
                           disabled={!connected}
@@ -652,7 +670,7 @@ export function GameView({
                             })
                           }
                         >
-                          Take {target.name}'s card instead
+                          <Hand size={16} /> Take {target.name}'s card instead
                         </button>
                       ))
                     : null}
@@ -670,17 +688,68 @@ export function GameView({
                     .join(" ")}
                 </strong>
                 <p>{card.text}</p>
-                <div className="card-actions">
-                  {card.id === "avoid-or-two" || card.id === "steal-or-two" ? (
-                    <button
-                      disabled={!connected || !isMyTurn || me.fishDrawnTurn === state.turn.number}
-                      onClick={() => startChoiceCard(card.id as "avoid-or-two" | "steal-or-two")}
-                    >
-                      Use card
-                    </button>
+                {fishFeedback ? (
+                  <div className="fish-card-feedback" role="status">
+                    {fishFeedback}
+                  </div>
+                ) : null}
+                <div
+                  className={`card-actions ${card.id === "avoid-or-two" || card.id === "steal-or-two" ? "two-options" : ""}`.trim()}
+                >
+                  {card.id === "avoid-or-two" ? (
+                    <>
+                      <button
+                        className="fish-choice-button"
+                        disabled={!canUseRolledFish}
+                        onClick={() =>
+                          dispatch({
+                            type: "play-fish",
+                            play: { cardId: "avoid-or-two", choice: "two" }
+                          })
+                        }
+                      >
+                        <Plus size={17} /> Add 2 moves
+                      </button>
+                      <button
+                        className="fish-choice-button"
+                        disabled={!canUseRolledFish}
+                        onClick={() =>
+                          dispatch({
+                            type: "play-fish",
+                            play: { cardId: "avoid-or-two", choice: "avoid" }
+                          })
+                        }
+                      >
+                        <ShieldCheck size={17} /> Avoid Poop effect
+                      </button>
+                    </>
+                  ) : card.id === "steal-or-two" ? (
+                    <>
+                      <button
+                        className="fish-choice-button"
+                        disabled={!canUseRolledFish}
+                        onClick={() =>
+                          dispatch({
+                            type: "play-fish",
+                            play: { cardId: "steal-or-two", choice: "two" }
+                          })
+                        }
+                      >
+                        <Plus size={17} /> Add 2 moves
+                      </button>
+                      <button
+                        className="fish-choice-button"
+                        aria-expanded={stealPickerOpen}
+                        disabled={!canStealFish}
+                        onClick={() => setStealPickerOpen((open) => !open)}
+                      >
+                        <Hand size={17} /> Steal Fish card
+                      </button>
+                    </>
                   ) : (
                     <button
-                      disabled={!connected || !isMyTurn || me.fishDrawnTurn === state.turn.number}
+                      className="fish-choice-button"
+                      disabled={!canUseRolledFish}
                       onClick={playSimpleCard}
                     >
                       {card.id === "move-opponent"
@@ -691,6 +760,36 @@ export function GameView({
                     </button>
                   )}
                 </div>
+                {card.id === "steal-or-two" && stealPickerOpen ? (
+                  <div className="fish-target-picker" aria-label="Choose a player to steal from">
+                    <span>Choose a player</span>
+                    {stealOpponents.map((target) => (
+                      <button
+                        key={target.id}
+                        disabled={!canStealFish}
+                        onClick={() =>
+                          dispatch({
+                            type: "play-fish",
+                            play: {
+                              cardId: "steal-or-two",
+                              choice: "steal",
+                              targetPlayerId: target.id
+                            }
+                          })
+                        }
+                      >
+                        <span
+                          className="player-token"
+                          style={{ background: PLAYER_COLOR_HEX[target.themeColor] }}
+                        />
+                        <span>
+                          <strong>{target.name}</strong>
+                          <small>{target.fishCard ? "Fish card held" : "No Fish card held"}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="empty-card">

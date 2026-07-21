@@ -4,6 +4,11 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   build: { target: "esnext" },
+  optimizeDeps: {
+    // This workspace package is rebuilt in watch mode during development. Let
+    // Vite read the current output instead of retaining a pre-bundled copy.
+    exclude: ["@slidescape/game"]
+  },
   server: {
     port: 5173,
     proxy: {

@@ -4,7 +4,7 @@ export type SoundEffect =
   | "dice"
   | "slide"
   | "ice"
-  | "walrus"
+  | "elephant-seal"
   | "poop"
   | "fish"
   | "score"
@@ -191,7 +191,7 @@ class SlidescapeAudio {
       this.tone(420, 560, now, 0.14, 0.075, "triangle");
       this.tone(680, 820, now + 0.06, 0.13, 0.045, "sine");
     }
-    if (effect === "walrus") {
+    if (effect === "elephant-seal") {
       this.tone(230, 155, now, 0.28, 0.075, "sine");
       this.tone(310, 230, now + 0.05, 0.2, 0.035, "triangle");
     }

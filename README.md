@@ -8,7 +8,7 @@ Slidescape is a real-time strategy board game about sliding penguins across the 
 | Standard |       2 | Two flocks per player         | Escape 10 penguins    |
 | Classic  |       4 | One flock per player          | Escape all 6 penguins |
 
-Penguins slide until blocked, while ice blocks move one square at a time. The shared walrus, Fish cards, Poop cards, and the rule that every flock must retain a route to its exit add tactical constraints. The complete rules are available in the application.
+Penguins slide until blocked, while ice blocks move one square at a time. The shared elephant seal, Fish cards, Poop cards, and the rule that every flock must retain a route to its exit add tactical constraints. The complete rules are available in the application.
 
 ## Features
 

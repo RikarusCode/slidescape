@@ -26,7 +26,7 @@ import {
   PenguinGlyph,
   PoopGlyph,
   startingFacing,
-  WalrusGlyph
+  ElephantSealGlyph
 } from "./PieceGlyphs.js";
 
 const GRID = Array.from({ length: BOARD_SIZE + 1 }, (_, index) => index);
@@ -86,14 +86,14 @@ function PieceGlyph({
   piece,
   selected,
   color,
-  walrusFacing,
-  walrusRotation
+  elephantSealFacing,
+  elephantSealRotation
 }: {
   piece: Piece;
   selected: boolean;
   color: string;
-  walrusFacing?: Direction;
-  walrusRotation?: number;
+  elephantSealFacing?: Direction;
+  elephantSealRotation?: number;
 }) {
   if (piece.kind === "ice")
     return (
@@ -101,10 +101,13 @@ function PieceGlyph({
         <IceBlockGlyph color={color} />
       </g>
     );
-  if (piece.kind === "walrus")
+  if (piece.kind === "elephant-seal")
     return (
-      <g aria-label="walrus">
-        <WalrusGlyph facing={walrusFacing ?? piece.facing} rotationDegrees={walrusRotation} />
+      <g aria-label="elephant seal">
+        <ElephantSealGlyph
+          facing={elephantSealFacing ?? piece.facing}
+          rotationDegrees={elephantSealRotation}
+        />
       </g>
     );
   return (
@@ -120,7 +123,7 @@ interface AnimatedPieceProps {
   selectable: boolean;
   fenceActive: boolean;
   color: string;
-  walrusFacing?: Direction;
+  elephantSealFacing?: Direction;
   positionOverride?: Position;
   facingOverride?: Direction;
   onSelect: (pieceId: string) => void;
@@ -136,21 +139,25 @@ const AnimatedPiece = memo(
     selectable,
     fenceActive,
     color,
-    walrusFacing,
+    elephantSealFacing,
     positionOverride,
     facingOverride,
     onSelect
   }: AnimatedPieceProps) {
     const visualPosition =
-      piece.kind === "walrus" && fenceActive ? { x: 6.5, y: 6.5 } : (positionOverride ?? piece.position);
-    const visualFacing = facingOverride ?? walrusFacing ?? piece.facing ?? "down";
+      piece.kind === "elephant-seal" && fenceActive
+        ? { x: 6.5, y: 6.5 }
+        : (positionOverride ?? piece.position);
+    const visualFacing = facingOverride ?? elephantSealFacing ?? piece.facing ?? "down";
     const node = useRef<SVGGElement>(null);
     const previous = useRef({ ...visualPosition });
     const previousFacing = useRef(visualFacing);
-    const walrusRotation = useRef(directionRotation(visualFacing));
-    const visualWalrusRotation =
-      piece.kind === "walrus" ? nearestFacingRotation(walrusRotation.current, visualFacing) : undefined;
-    if (visualWalrusRotation !== undefined) walrusRotation.current = visualWalrusRotation;
+    const elephantSealRotation = useRef(directionRotation(visualFacing));
+    const visualElephantSealRotation =
+      piece.kind === "elephant-seal"
+        ? nearestFacingRotation(elephantSealRotation.current, visualFacing)
+        : undefined;
+    if (visualElephantSealRotation !== undefined) elephantSealRotation.current = visualElephantSealRotation;
     const [reducedMotion] = useState(
       () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
     );
@@ -199,7 +206,9 @@ const AnimatedPiece = memo(
         data-piece-id={piece.id}
         transform={`translate(${visualPosition.x} ${visualPosition.y})`}
         onClick={
-          selectable && !(piece.kind === "walrus" && fenceActive) ? () => onSelect(piece.id) : undefined
+          selectable && !(piece.kind === "elephant-seal" && fenceActive)
+            ? () => onSelect(piece.id)
+            : undefined
         }
         className={`board-piece ${selectable ? "selectable" : ""}`.trim()}
       >
@@ -207,7 +216,7 @@ const AnimatedPiece = memo(
           piece={{ ...piece, facing: visualFacing }}
           selected={selected}
           color={color}
-          walrusRotation={visualWalrusRotation}
+          elephantSealRotation={visualElephantSealRotation}
         />
       </g>
     );
@@ -222,7 +231,7 @@ const AnimatedPiece = memo(
     previous.selectable === next.selectable &&
     previous.fenceActive === next.fenceActive &&
     previous.color === next.color &&
-    previous.walrusFacing === next.walrusFacing &&
+    previous.elephantSealFacing === next.elephantSealFacing &&
     sameOptionalPosition(previous.positionOverride, next.positionOverride) &&
     previous.facingOverride === next.facingOverride &&
     previous.onSelect === next.onSelect
@@ -364,8 +373,15 @@ export const Board = memo(function Board({
           />
         ))}
         {state.fenceActive ? (
-          <g className="walrus-fence" aria-label="walrus fence">
-            <rect x="6.08" y="6.08" width="1.84" height="1.84" rx=".16" className="walrus-fence-frame" />
+          <g className="elephant-seal-fence" aria-label="elephant seal fence">
+            <rect
+              x="6.08"
+              y="6.08"
+              width="1.84"
+              height="1.84"
+              rx=".16"
+              className="elephant-seal-fence-frame"
+            />
             {FENCE_POSITIONS.map((position) => (
               <rect
                 key={positionKey(position)}
@@ -374,7 +390,7 @@ export const Board = memo(function Board({
                 width=".76"
                 height=".76"
                 rx=".1"
-                className="walrus-fence-ice"
+                className="elephant-seal-fence-ice"
               />
             ))}
           </g>
@@ -401,8 +417,10 @@ export const Board = memo(function Board({
             selectable={selectableIds.has(piece.id)}
             fenceActive={state.fenceActive}
             color={piece.ownerId ? PLAYER_COLOR_HEX[playerById.get(piece.ownerId)!.themeColor] : "#ffffff"}
-            walrusFacing={
-              piece.kind === "walrus" && state.fenceActive ? startingFacing(viewer?.colors[0]) : undefined
+            elephantSealFacing={
+              piece.kind === "elephant-seal" && state.fenceActive
+                ? startingFacing(viewer?.colors[0])
+                : undefined
             }
             positionOverride={optimisticMove?.pieceId === piece.id ? optimisticMove.to : undefined}
             facingOverride={optimisticMove?.pieceId === piece.id ? optimisticMove.direction : undefined}

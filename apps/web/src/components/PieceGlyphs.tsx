@@ -188,7 +188,7 @@ export function IceBlockGlyph({ color }: { color: string }) {
   );
 }
 
-export function WalrusGlyph({
+export function ElephantSealGlyph({
   facing = "down",
   rotationDegrees
 }: {
@@ -197,25 +197,36 @@ export function WalrusGlyph({
 }) {
   return (
     <g
-      className="piece piece-facing walrus-piece"
+      className="piece piece-facing elephant-seal-piece"
       style={{ transform: `rotate(${rotationDegrees ?? rotation[facing]}deg)` }}
     >
-      <circle cx=".5" cy=".51" r=".35" fill="#9aabba" stroke="#0b315d" strokeWidth=".06" />
-      <ellipse cx=".5" cy=".36" rx=".24" ry=".18" fill="#c5d0d8" />
-      <circle cx=".415" cy=".34" r=".035" fill="#071a33" />
-      <circle cx=".585" cy=".34" r=".035" fill="#071a33" />
-      <ellipse cx=".5" cy=".44" rx=".12" ry=".075" fill="#718596" />
-      <path
-        d="M.43 .47l.025 .2.055-.18M.57 .47l-.025 .2-.055-.18"
-        fill="#fff"
-        stroke="#0b315d"
-        strokeWidth=".022"
-      />
-      <path
-        d="M.38 .43l-.19-.045M.38 .48l-.2 .04M.62 .43l.19-.045M.62 .48l.2 .04"
-        stroke="#0b315d"
-        strokeWidth=".022"
-      />
+      <g transform="translate(-.04 -.04) scale(1.08)">
+        <circle cx=".5" cy=".52" r=".34" fill="#8799a8" stroke="#0b315d" strokeWidth=".055" />
+        <path
+          d="M.23 .56C.12 .59.13 .71.27 .7M.77 .56c.11 .03.1 .15-.04 .14"
+          fill="#718796"
+          stroke="#0b315d"
+          strokeWidth=".045"
+          strokeLinecap="round"
+        />
+        <ellipse cx=".5" cy=".61" rx=".2" ry=".17" fill="#9cabb6" opacity=".7" />
+        <ellipse cx=".5" cy=".43" rx=".2" ry=".17" fill="#bac7d0" />
+        <circle cx=".415" cy=".38" r=".037" fill="#071a33" />
+        <circle cx=".585" cy=".38" r=".037" fill="#071a33" />
+        <circle cx=".403" cy=".367" r=".011" fill="#fff" />
+        <circle cx=".573" cy=".367" r=".011" fill="#fff" />
+        <circle cx=".345" cy=".47" r=".025" fill="#d7a2a4" opacity=".65" />
+        <circle cx=".655" cy=".47" r=".025" fill="#d7a2a4" opacity=".65" />
+        <path
+          d="M.46 .45C.43 .5.45 .59.51 .61c.07-.025.075-.11.025-.155z"
+          fill="#667d8e"
+          stroke="#0b315d"
+          strokeWidth=".025"
+          strokeLinejoin="round"
+        />
+        <circle cx=".485" cy=".465" r=".009" fill="#0b315d" />
+        <circle cx=".52" cy=".465" r=".009" fill="#0b315d" />
+      </g>
     </g>
   );
 }

@@ -164,7 +164,7 @@ export function Home({
             <SlidescapeMark />
             <h1>Slidescape</h1>
           </div>
-          <p className="home-tagline">Slide. Block. Escape.</p>
+          <p className="home-tagline">Slide. Block. Escape.<br />An online Chickapig alternative.</p>
         </div>
         <div className="hero-penguins" aria-hidden="true">
           <span className="skate-trail trail-teal" />

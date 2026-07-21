@@ -12,7 +12,7 @@ export type PlayerColor =
   | "berry-pink"
   | "lime-green";
 export type Direction = "up" | "right" | "down" | "left";
-export type PieceKind = "penguin" | "ice" | "walrus";
+export type PieceKind = "penguin" | "ice" | "elephant-seal";
 export type GameStatus = "playing" | "finished";
 export type TurnPhase = "awaiting-roll" | "moving" | "resolving-poop";
 export type FishCardId =
@@ -71,7 +71,7 @@ export interface TurnState {
   pendingFishChoice?: PendingFishChoice;
   forcedPieceOwnerIds?: string[];
   fishDrawAvailable?: boolean;
-  walrusRelocationsRemaining?: number;
+  elephantSealRelocationsRemaining?: number;
   timerDeadline?: number;
   timerDurationSeconds?: TurnTimerSeconds;
 }
@@ -108,7 +108,7 @@ export interface CardReveal {
 }
 
 export interface GameState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   id: string;
   mode: GameMode;
   status: GameStatus;
@@ -184,7 +184,7 @@ export type ClientCommand =
       move: LegalMove;
     }
   | {
-      type: "place-walrus";
+      type: "place-elephant-seal";
       commandId: string;
       expectedVersion: number;
       to: Position;

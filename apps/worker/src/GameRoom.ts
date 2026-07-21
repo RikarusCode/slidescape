@@ -5,9 +5,10 @@ import {
   drawFish,
   endTurn,
   legalMoves,
+  migrateGameState,
   move,
   PLAYER_COLOR_ORDER,
-  placeWalrusAndPoop,
+  placeElephantSealAndPoop,
   playFish,
   resolvePoopChoice,
   roll,
@@ -81,7 +82,7 @@ export class GameRoom extends DurableObject<Env> {
     mode: GameMode,
     identity: SessionIdentity
   ): Promise<{ lobby: PublicLobby; game: NonNullable<RoomSnapshot["game"]> }> {
-    const existing = await this.ctx.storage.get<RoomSnapshot>("room");
+    const existing = this.migrateRoom(await this.ctx.storage.get<RoomSnapshot>("room"));
     if (existing?.game)
       return {
         lobby: this.publicLobby(existing),
@@ -155,7 +156,7 @@ export class GameRoom extends DurableObject<Env> {
     const url = new URL(request.url);
     const playerId = url.searchParams.get("playerId") ?? "";
     const reconnectToken = url.searchParams.get("reconnectToken") ?? "";
-    const room = await this.ctx.storage.get<RoomSnapshot>("room");
+    const room = this.migrateRoom(await this.ctx.storage.get<RoomSnapshot>("room"));
     const member = room?.members.find(
       (candidate) => candidate.playerId === playerId && candidate.reconnectToken === reconnectToken
     );
@@ -235,7 +236,7 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    const room = await this.ctx.storage.get<RoomSnapshot>("room");
+    const room = this.migrateRoom(await this.ctx.storage.get<RoomSnapshot>("room"));
     if (!room) return;
     const now = Date.now();
     if (room.expiresAt <= now && this.ctx.getWebSockets().length === 0) {
@@ -361,8 +362,8 @@ export class GameRoom extends DurableObject<Env> {
     if (command.type === "roll") next = roll(next, actorId);
     else if (command.type === "draw-fish") next = drawFish(next, actorId);
     else if (command.type === "move") next = move(next, actorId, command.move);
-    else if (command.type === "place-walrus")
-      next = placeWalrusAndPoop(next, actorId, command.to, {
+    else if (command.type === "place-elephant-seal")
+      next = placeElephantSealAndPoop(next, actorId, command.to, {
         leavePoop: command.leavePoop,
         poopFrom: command.poopFrom
       });
@@ -477,7 +478,7 @@ export class GameRoom extends DurableObject<Env> {
   private async markDisconnected(socket: WebSocket): Promise<void> {
     const attachment = socket.deserializeAttachment() as SocketAttachment | null;
     if (!attachment?.memberId) return;
-    const room = await this.ctx.storage.get<RoomSnapshot>("room");
+    const room = this.migrateRoom(await this.ctx.storage.get<RoomSnapshot>("room"));
     const member = room?.members.find((candidate) => candidate.playerId === attachment.memberId);
     if (!room || !member || member.isBot) return;
     const anotherSocketIsOpen = this.ctx
@@ -535,8 +536,13 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async requireRoom(): Promise<RoomSnapshot> {
-    const room = await this.ctx.storage.get<RoomSnapshot>("room");
+    const room = this.migrateRoom(await this.ctx.storage.get<RoomSnapshot>("room"));
     if (!room) throw new Error("That room is unavailable.");
+    return room;
+  }
+
+  private migrateRoom(room: RoomSnapshot | undefined): RoomSnapshot | undefined {
+    if (room?.game) room.game = migrateGameState(room.game);
     return room;
   }
 

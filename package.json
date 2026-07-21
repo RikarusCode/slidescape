@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.12.1",
   "scripts": {
-    "dev": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --parallel --filter @slidescape/worker --filter @slidescape/web dev",
+    "dev": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --parallel --filter @slidescape/game --filter @slidescape/worker --filter @slidescape/web dev",
     "build": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --filter @slidescape/worker build",
     "benchmark:rules": "pnpm --filter @slidescape/game build && node scripts/benchmark-rules.mjs",
     "deploy": "pnpm build && wrangler deploy",
