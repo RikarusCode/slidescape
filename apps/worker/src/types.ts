@@ -1,4 +1,4 @@
-import type { GameMode, GameState, LobbySettings, PlayerColor } from "@slidescape/game";
+import type { BotActionKind, GameMode, GameState, LobbySettings, PlayerColor } from "@slidescape/game";
 
 export interface SessionIdentity {
   playerId: string;
@@ -40,6 +40,13 @@ export interface RoomSnapshot {
   processed: string[];
   disconnectDeadlines: Record<string, number>;
   botActionAt?: number;
+  /**
+   * A bot move computed ahead of the pacing delay (advanceBotAction is pure,
+   * so it's safe to run as soon as the prior action lands rather than at the
+   * scheduled alarm). `forVersion` guards against applying it if some other
+   * event (a forfeit, etc.) mutated `game` in the meantime.
+   */
+  pendingBotResult?: { forVersion: number; state: GameState; kind: BotActionKind };
   expiresAt: number;
 }
 

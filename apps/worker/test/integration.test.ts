@@ -380,7 +380,8 @@ describe("GameRoom matches", () => {
     const roomId = crypto.randomUUID();
     const room = env.GAME_ROOMS.getByName(roomId);
     const initialized = await room.initializeBot(roomId, "quick-2", human);
-    const botId = initialized.lobby.members.find((member) => member.isBot)!.id;
+    const bot = initialized.lobby.members.find((member) => member.isBot)!;
+    const botId = bot.id;
     await runInDurableObject(room, async (_instance, state) => {
       const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
       snapshot.game!.turn.activePlayerId = botId;
@@ -402,7 +403,7 @@ describe("GameRoom matches", () => {
     await runInDurableObject(room, async (_instance, state) => {
       const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
       expect(snapshot.game!.version).toBeGreaterThan(initialized.game.version);
-      expect(snapshot.game!.log.some((entry) => entry.startsWith("Testing Bot rolled"))).toBe(true);
+      expect(snapshot.game!.log.some((entry) => entry.startsWith(`${bot.name} rolled`))).toBe(true);
     });
   });
 });

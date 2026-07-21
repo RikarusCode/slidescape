@@ -36,6 +36,28 @@ interface SocketAttachment {
 const BOT_ACTION_DELAY_MS = 700;
 const BOT_ROLL_DELAY_MS = 1_000;
 const BOT_OPENING_DELAY_MS = 1_100;
+const BOT_NAMES = [
+  "Polar Bot",
+  "Frost Bot",
+  "Glacier Bot",
+  "Iceberg Bot",
+  "Blizzard Bot",
+  "Krill Bot",
+  "Moonlight Bot",
+  "Orca Bot",
+  "Humpback Bot",
+  "Blue Whale Bot"
+];
+
+function pickBotNames(count: number): string[] {
+  const pool = [...BOT_NAMES];
+  const chosen: string[] = [];
+  while (chosen.length < count && pool.length > 0) {
+    const index = Math.floor(Math.random() * pool.length);
+    chosen.push(pool.splice(index, 1)[0]!);
+  }
+  return chosen;
+}
 
 export class GameRoom extends DurableObject<Env> {
   async initializePrivate(
@@ -88,12 +110,13 @@ export class GameRoom extends DurableObject<Env> {
         lobby: this.publicLobby(existing),
         game: publicGameState(existing.game)
       };
+    const botNames = pickBotNames(playerCount(mode) - 1);
     const bots = Array.from({ length: playerCount(mode) - 1 }, (_, index) =>
       this.member(
         {
           playerId: crypto.randomUUID(),
           reconnectToken: crypto.randomUUID(),
-          name: playerCount(mode) === 2 ? "Testing Bot" : `Testing Bot ${index + 1}`
+          name: botNames[index]!
         },
         true
       )
@@ -175,9 +198,7 @@ export class GameRoom extends DurableObject<Env> {
       if (player.id === member.playerId) player.connected = true;
     });
     room.expiresAt = Date.now() + ROOM_TTL_MS;
-    if (room.game && this.activeMemberIsBot(room) && !room.botActionAt) {
-      room.botActionAt = Date.now() + BOT_OPENING_DELAY_MS;
-    }
+    if (room.game && !room.botActionAt) this.scheduleBotAction(room, BOT_OPENING_DELAY_MS);
     await this.save(room);
     const lobby = this.publicLobby(room);
     sendEvent(server, "session", {
@@ -384,19 +405,37 @@ export class GameRoom extends DurableObject<Env> {
     );
   }
 
+  // The bot's move is computed as soon as it becomes its turn (advanceBotAction
+  // is a pure function of the game state, so there's no harm running it early)
+  // and then just held until `botActionAt`. That way the visible pause before a
+  // bot acts is max(pacingDelay, calculationTime) instead of the two stacking:
+  // a slow calculation eats into the pacing delay rather than adding to it, and
+  // a fast one still waits out the remaining delay for a natural cadence.
   private scheduleBotAction(room: RoomSnapshot, delay = BOT_ACTION_DELAY_MS): void {
     if (!this.activeMemberIsBot(room) || room.game?.status !== "playing") {
       delete room.botActionAt;
+      delete room.pendingBotResult;
       return;
     }
-    room.botActionAt ??= Date.now() + delay;
+    if (room.botActionAt !== undefined) return;
+    const game = room.game;
+    const startedAt = Date.now();
+    const result = advanceBotAction(game, game.turn.activePlayerId);
+    const elapsed = Date.now() - startedAt;
+    room.pendingBotResult = { forVersion: game.version, state: result.state, kind: result.kind };
+    room.botActionAt = Date.now() + Math.max(0, delay - elapsed);
   }
 
   private advanceScheduledBot(room: RoomSnapshot): void {
     const game = room.game;
+    const pending = room.pendingBotResult;
     delete room.botActionAt;
+    delete room.pendingBotResult;
     if (!game || game.status !== "playing" || !this.activeMemberIsBot(room)) return;
-    const result = advanceBotAction(game, game.turn.activePlayerId);
+    const result =
+      pending && pending.forVersion === game.version
+        ? { state: pending.state, kind: pending.kind }
+        : advanceBotAction(game, game.turn.activePlayerId);
     room.game = result.state;
     this.scheduleBotAction(room, result.kind === "roll" ? BOT_ROLL_DELAY_MS : BOT_ACTION_DELAY_MS);
   }
