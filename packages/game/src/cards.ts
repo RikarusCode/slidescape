@@ -8,7 +8,7 @@ export const FISH_CARDS: CardDefinition<FishCardId>[] = [
     timing: "your turn",
     choices: [],
     targets: "next penguin move",
-    text: "On one penguin slide, pass over the first penguin, ice block, or unfenced walrus in its path. The slide still costs one move."
+    text: "On one penguin slide, pass over the first penguin, ice block, or unfenced walrus when the square immediately beyond it is open. Continue sliding and stop normally before any later obstacle. The slide still costs one move."
   },
   {
     id: "avoid-or-two",

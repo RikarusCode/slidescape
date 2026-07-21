@@ -227,6 +227,15 @@ function crossesGoalGuard(from: Position, to: Position): boolean {
   return false;
 }
 
+function hasOpenFlyoverLanding(
+  blockerPosition: Position,
+  direction: Direction,
+  blockers: Map<string, Piece>
+): boolean {
+  const landing = step(blockerPosition, direction);
+  return inside(landing) && !crossesGoalGuard(blockerPosition, landing) && !blockers.has(key(landing));
+}
+
 function penguinMove(
   state: GameState,
   piece: Piece,
@@ -258,7 +267,8 @@ function penguinMove(
         flyover &&
         !ignored &&
         ["penguin", "ice", "walrus"].includes(blocker.kind) &&
-        !(blocker.kind === "walrus" && state.fenceActive)
+        !(blocker.kind === "walrus" && state.fenceActive) &&
+        hasOpenFlyoverLanding(next, direction, blockers)
       ) {
         ignored = true;
         cursor = next;

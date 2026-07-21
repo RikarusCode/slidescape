@@ -373,6 +373,10 @@ describe("movement", () => {
     state.players[0]!.fishCard = "flyover";
     state.players[0]!.fishDrawnTurn = 0;
     const activated = playFish(state, "p1", { cardId: "flyover" });
+    const allDirections = legalMoves(activated, "p1")
+      .filter((candidate) => candidate.pieceId === penguin.id)
+      .map((candidate) => candidate.direction);
+    expect(allDirections).toEqual(expect.arrayContaining(["up", "right", "down", "left"]));
     const flyover = legalMovesForPiece(activated, penguin.id).find(
       (candidate) => candidate.direction === "right"
     );
@@ -380,6 +384,56 @@ describe("movement", () => {
     expect(flyover!.to.x).toBeGreaterThan(5);
     const moved = move(activated, "p1", flyover!);
     expect(moved.players[0]!.effects.flyoverCharges).toBe(0);
+  });
+
+  it("flies over the first spaced obstacle and stops normally before the second", () => {
+    const state = createGame("multiple-flyover-blockers", "quick-2", guests(2), 131);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.rolled = 3;
+    state.turn.movesRemaining = 3;
+    state.players[0]!.effects.flyoverCharges = 1;
+    const penguin = state.pieces.find((piece) => piece.id === "green-penguin-1")!;
+    const firstIce = state.pieces.find((piece) => piece.id === "green-ice-1")!;
+    const secondIce = state.pieces.find((piece) => piece.id === "green-ice-2")!;
+    penguin.position = { x: 4, y: 4 };
+    firstIce.position = { x: 6, y: 4 };
+    secondIce.position = { x: 9, y: 4 };
+
+    const moves = legalMoves(state, "p1").filter((candidate) => candidate.pieceId === penguin.id);
+    expect(moves).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ direction: "up", usesFlyover: false }),
+        expect.objectContaining({ direction: "down", usesFlyover: false }),
+        expect.objectContaining({ direction: "left", usesFlyover: false })
+      ])
+    );
+    expect(moves.find((candidate) => candidate.direction === "right")).toMatchObject({
+      to: { x: 8, y: 4 },
+      usesFlyover: true
+    });
+  });
+
+  it("does not offer a flyover into adjacent blockers while retaining every clear direction", () => {
+    const state = createGame("adjacent-multiple-flyover-blockers", "quick-2", guests(2), 132);
+    state.turn.activePlayerId = "p1";
+    state.turn.phase = "moving";
+    state.turn.rolled = 3;
+    state.turn.movesRemaining = 3;
+    state.players[0]!.effects.flyoverCharges = 1;
+    const penguin = state.pieces.find((piece) => piece.id === "green-penguin-1")!;
+    const firstIce = state.pieces.find((piece) => piece.id === "green-ice-1")!;
+    const secondIce = state.pieces.find((piece) => piece.id === "green-ice-2")!;
+    penguin.position = { x: 4, y: 4 };
+    firstIce.position = { x: 5, y: 4 };
+    secondIce.position = { x: 6, y: 4 };
+
+    const moves = legalMoves(state, "p1").filter((candidate) => candidate.pieceId === penguin.id);
+    expect(moves.some((candidate) => candidate.direction === "right")).toBe(false);
+    expect(moves.map((candidate) => candidate.direction)).toEqual(
+      expect.arrayContaining(["up", "down", "left"])
+    );
+    expect(state.players[0]!.effects.flyoverCharges).toBe(1);
   });
 
   it("never permits movement after the move budget reaches zero", () => {

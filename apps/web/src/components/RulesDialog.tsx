@@ -166,9 +166,15 @@ export function RulesButton({ className = "" }: { className?: string }) {
                 <p>
                   When a two is rolled, you may opt to take a fish card rather than your two moves. You may
                   hold only one Fish card at a time. Cards are played only during your own turn, and may not
-                  be played on the turn that they are recieved. All fish cards are helpful, so use them
+                  be played on the turn that they are received. All fish cards are helpful, so use them
                   wisely.
                 </p>
+                <div className="rule-callout">
+                  A Flyover can cross one penguin, ice block, or unfenced walrus, including one directly
+                  beside the moving penguin, as long as the square immediately beyond it is open. After the
+                  jump, the penguin keeps sliding and stops normally before any later obstacle. Two adjacent
+                  obstacles cannot be flown over because there is no open landing square between them.
+                </div>
               </section>
 
               <section id="rules-clarifications" className="rules-section">
@@ -180,7 +186,7 @@ export function RulesButton({ className = "" }: { className?: string }) {
                 </div>
                 <div className="clarification-list">
                   <p>
-                    <strong>Using a fish card to double a roll </strong>makes it two seperate moves. For
+                    <strong>Using a fish card to double a roll </strong>makes it two separate moves. For
                     natural rolls of 1, either or both may be used to relocate the walrus, and each relocation
                     may leave poop.
                   </p>

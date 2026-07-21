@@ -28,7 +28,7 @@ WebSocket fan-out are the most latency-sensitive server paths.
 | Worker bundle, gzip                  | 14.16 KiB | 15.11 KiB |
 | pnpm lockfile                        |  94,924 B |  75,264 B |
 | Installed package directories        |       218 |       136 |
-| Automated tests                      |        53 |        64 |
+| Automated tests                      |        53 |        66 |
 
 Run `pnpm benchmark:rules` to repeat the rules-engine measurement. The Worker increase is deliberate: request
 size validation, public-state redaction, safer protocol handling, and security headers were added.
@@ -69,7 +69,7 @@ load: the browser streams one shuffled track only after audio is unlocked. Initi
 ## Verification
 
 - Strict TypeScript checks pass for game, web, Worker, and Worker integration tests.
-- 64 Vitest tests pass across seven files: 49 source-level tests and 15 workerd-backed integration tests.
+- 66 Vitest tests pass across seven files: 51 source-level tests and 15 workerd-backed integration tests.
 - Seeded simulations across all three modes verify deterministic replay, version progression, move budgets,
   piece overlap/count invariants, and score consistency.
 - The isolated Worker smoke test passes 11 private-room, color, timer, command convergence, reconnect,
