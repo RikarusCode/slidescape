@@ -16,4 +16,3 @@ export function shuffle<T>(items: T[], seed: number): [T[], number] {
   }
   return [copy, cursor];
 }
-

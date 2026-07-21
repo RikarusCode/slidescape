@@ -3,7 +3,14 @@ export const BOARD_SIZE = 14;
 export type GameMode = "quick-2" | "strategic-2" | "classic-4";
 export type TurnTimerSeconds = 0 | 45 | 90 | 180;
 export type Color = "green" | "yellow" | "red" | "blue";
-export type PlayerColor = "arctic-teal" | "sunburst" | "coral-red" | "cobalt-blue" | "aurora-purple" | "berry-pink" | "lime-green";
+export type PlayerColor =
+  | "arctic-teal"
+  | "sunburst"
+  | "coral-red"
+  | "cobalt-blue"
+  | "aurora-purple"
+  | "berry-pink"
+  | "lime-green";
 export type Direction = "up" | "right" | "down" | "left";
 export type PieceKind = "penguin" | "ice" | "walrus";
 export type GameStatus = "playing" | "finished";
@@ -15,14 +22,12 @@ export type FishCardId =
   | "steal-or-two"
   | "move-opponent"
   | "double-roll";
-export type PoopCardId =
-  | "skip-turn"
-  | "return-penguin"
-  | "two-move-turn"
-  | "opponent-moves"
-  | "discard-fish";
+export type PoopCardId = "skip-turn" | "return-penguin" | "two-move-turn" | "opponent-moves" | "discard-fish";
 
-export interface Position { x: number; y: number }
+export interface Position {
+  x: number;
+  y: number;
+}
 
 export interface Piece {
   id: string;
@@ -63,6 +68,7 @@ export interface TurnState {
   movesRemaining: number;
   pendingPoop: PoopCardId[];
   pendingChoice?: PendingCardChoice;
+  pendingFishChoice?: PendingFishChoice;
   forcedPieceOwnerIds?: string[];
   fishDrawAvailable?: boolean;
   walrusRelocationsRemaining?: number;
@@ -71,8 +77,13 @@ export interface TurnState {
 }
 
 export interface ScoreSnapshot {
-  turnNumber: number;
+  moveNumber: number;
   scores: Record<string, number>;
+}
+
+export interface PendingFishChoice {
+  playerId: string;
+  cardId: "avoid-or-two" | "steal-or-two";
 }
 
 export interface ReturnPenguinOption {
@@ -117,9 +128,14 @@ export interface GameState {
   cardRevealSequence?: number;
   cardReveals?: CardReveal[];
   scoreHistory?: ScoreSnapshot[];
+  moveNumber?: number;
 }
 
-export interface GameGuest { id: string; name: string; colorChoice?: PlayerColor }
+export interface GameGuest {
+  id: string;
+  name: string;
+  colorChoice?: PlayerColor;
+}
 
 export interface CardDefinition<T extends string = string> {
   id: T;
@@ -142,9 +158,13 @@ export interface LegalMove {
 
 export type FishPlay =
   | { cardId: "flyover" }
-  | { cardId: "avoid-or-two"; choice: "avoid" | "two" }
+  | { cardId: "avoid-or-two"; choice: "start" | "avoid" | "two" | "keep-two" }
   | { cardId: "relocate-and-roll"; poopFrom?: Position; poopTo?: Position }
-  | { cardId: "steal-or-two"; choice: "steal" | "two"; targetPlayerId?: string }
+  | {
+      cardId: "steal-or-two";
+      choice: "start" | "steal" | "two" | "keep-two";
+      targetPlayerId?: string;
+    }
   | { cardId: "move-opponent"; move: LegalMove }
   | { cardId: "double-roll" };
 
@@ -157,10 +177,33 @@ export interface LobbySettings {
 export type ClientCommand =
   | { type: "roll"; commandId: string; expectedVersion: number }
   | { type: "draw-fish"; commandId: string; expectedVersion: number }
-  | { type: "move"; commandId: string; expectedVersion: number; move: LegalMove }
-  | { type: "place-walrus"; commandId: string; expectedVersion: number; to: Position; leavePoop?: boolean; poopFrom?: Position }
-  | { type: "play-fish"; commandId: string; expectedVersion: number; play: FishPlay }
-  | { type: "resolve-poop-choice"; commandId: string; expectedVersion: number; pieceId: string; to: Position }
+  | {
+      type: "move";
+      commandId: string;
+      expectedVersion: number;
+      move: LegalMove;
+    }
+  | {
+      type: "place-walrus";
+      commandId: string;
+      expectedVersion: number;
+      to: Position;
+      leavePoop?: boolean;
+      poopFrom?: Position;
+    }
+  | {
+      type: "play-fish";
+      commandId: string;
+      expectedVersion: number;
+      play: FishPlay;
+    }
+  | {
+      type: "resolve-poop-choice";
+      commandId: string;
+      expectedVersion: number;
+      pieceId: string;
+      to: Position;
+    }
   | { type: "end-turn"; commandId: string; expectedVersion: number };
 
 export type ServerEvent =

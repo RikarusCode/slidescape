@@ -2,9 +2,20 @@ import type { Color, PlayerColor, Position } from "./types.js";
 
 export const COLOR_ORDER: Color[] = ["green", "yellow", "red", "blue"];
 export const COLOR_HEX: Record<Color, string> = {
-  green: "#18a999", yellow: "#f6a623", red: "#ef5b5b", blue: "#3977d3"
+  green: "#18a999",
+  yellow: "#f6a623",
+  red: "#ef5b5b",
+  blue: "#3977d3"
 };
-export const PLAYER_COLOR_ORDER: PlayerColor[] = ["arctic-teal", "sunburst", "coral-red", "cobalt-blue", "aurora-purple", "berry-pink", "lime-green"];
+export const PLAYER_COLOR_ORDER: PlayerColor[] = [
+  "arctic-teal",
+  "sunburst",
+  "coral-red",
+  "cobalt-blue",
+  "aurora-purple",
+  "berry-pink",
+  "lime-green"
+];
 export const PLAYER_COLOR_HEX: Record<PlayerColor, string> = {
   "arctic-teal": "#159D98",
   sunburst: "#F2A51B",
@@ -33,10 +44,30 @@ export const STARTING_POSITIONS: Record<Color, Position[]> = {
 };
 
 export const ICE_POSITIONS: Record<Color, Position[]> = {
-  green: [{ x: 5, y: 1 }, { x: 8, y: 1 }, { x: 5, y: 10 }, { x: 8, y: 10 }],
-  yellow: [{ x: 12, y: 5 }, { x: 12, y: 8 }, { x: 3, y: 5 }, { x: 3, y: 8 }],
-  red: [{ x: 5, y: 12 }, { x: 8, y: 12 }, { x: 5, y: 3 }, { x: 8, y: 3 }],
-  blue: [{ x: 1, y: 5 }, { x: 1, y: 8 }, { x: 10, y: 5 }, { x: 10, y: 8 }]
+  green: [
+    { x: 5, y: 1 },
+    { x: 8, y: 1 },
+    { x: 5, y: 10 },
+    { x: 8, y: 10 }
+  ],
+  yellow: [
+    { x: 12, y: 5 },
+    { x: 12, y: 8 },
+    { x: 3, y: 5 },
+    { x: 3, y: 8 }
+  ],
+  red: [
+    { x: 5, y: 12 },
+    { x: 8, y: 12 },
+    { x: 5, y: 3 },
+    { x: 8, y: 3 }
+  ],
+  blue: [
+    { x: 1, y: 5 },
+    { x: 1, y: 8 },
+    { x: 10, y: 5 },
+    { x: 10, y: 8 }
+  ]
 };
 
 export const GOAL_LANES: Record<Color, Position[]> = {
@@ -49,7 +80,14 @@ export const GOAL_LANES: Record<Color, Position[]> = {
 export const GOAL_GUARD_BOUNDARIES = [6, 8] as const;
 
 export const FENCE_POSITIONS: Position[] = [
-  { x: 6, y: 6 }, { x: 7, y: 6 }, { x: 6, y: 7 }, { x: 7, y: 7 }
+  { x: 6, y: 6 },
+  { x: 7, y: 6 },
+  { x: 6, y: 7 },
+  { x: 7, y: 7 }
 ];
 
-export const SCORE_TARGET = { "quick-2": 4, "strategic-2": 10, "classic-4": 6 } as const;
+export const SCORE_TARGET = {
+  "quick-2": 4,
+  "strategic-2": 10,
+  "classic-4": 6
+} as const;

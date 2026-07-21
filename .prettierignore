@@ -1,0 +1,6 @@
+**/dist/
+**/node_modules/
+**/.wrangler/
+apps/worker/src/worker-configuration.d.ts
+apps/web/public/assets/audio/
+pnpm-lock.yaml

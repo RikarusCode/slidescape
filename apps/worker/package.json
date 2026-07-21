@@ -6,7 +6,7 @@
   "scripts": {
     "build": "wrangler deploy --config ../../wrangler.jsonc --dry-run --outdir dist",
     "dev": "wrangler dev --config ../../wrangler.jsonc --port 8787",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit"
   },
   "dependencies": {
     "@slidescape/game": "workspace:*"

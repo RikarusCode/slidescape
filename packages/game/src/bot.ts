@@ -17,15 +17,21 @@ export function advanceBotAction(state: GameState, actorId: string): BotActionRe
   if (state.turn.pendingChoice) {
     const option = state.turn.pendingChoice.options[state.seed % state.turn.pendingChoice.options.length]!;
     const position = option.positions[state.seed % option.positions.length]!;
-    return { state: resolvePoopChoice(state, actorId, option.pieceId, position), kind: "choice" };
+    return {
+      state: resolvePoopChoice(state, actorId, option.pieceId, position),
+      kind: "choice"
+    };
   }
 
   if (state.turn.phase === "awaiting-roll" && state.turn.forcedPieceOwnerIds?.length) {
     const moves = legalMoves(state, actorId);
     if (moves.length > 0) {
-      return { state: move(state, actorId, moves[state.seed % moves.length]!), kind: "move" };
+      return {
+        state: move(state, actorId, moves[state.seed % moves.length]!),
+        kind: "move"
+      };
     }
-    return { state: endTurn(state, actorId), kind: "end-turn" };
+    return { state: roll(state, actorId), kind: "roll" };
   }
 
   if (state.turn.phase === "awaiting-roll") {
@@ -35,7 +41,10 @@ export function advanceBotAction(state: GameState, actorId: string): BotActionRe
   if (state.turn.phase === "moving" && state.turn.movesRemaining > 0) {
     const moves = legalMoves(state, actorId);
     if (moves.length > 0) {
-      return { state: move(state, actorId, moves[state.seed % moves.length]!), kind: "move" };
+      return {
+        state: move(state, actorId, moves[state.seed % moves.length]!),
+        kind: "move"
+      };
     }
   }
 

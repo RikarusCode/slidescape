@@ -27,10 +27,11 @@ Open `http://127.0.0.1:5173`. Vite proxies `/api`, `/ws`, and `/health` to the l
 Useful commands:
 
 - `pnpm dev` — build the shared rules and initial frontend, then run Vite and the local Worker.
-- `pnpm typecheck` — type-check the rules, legacy Node server, Worker, and web client.
-- `pnpm test` — run deterministic rules and server regression tests.
-- `pnpm test:worker` — smoke-test private rooms, color claims, persistence, reconnects, alarms, and public matchmaking against a running local Worker.
-- `pnpm build` — build the rules, legacy server, web assets, and a Worker deployment bundle.
+- `pnpm typecheck` — type-check the rules, Worker, Worker integration tests, and web client.
+- `pnpm test` — run all rules, UI utility, protocol, and Durable Object integration tests.
+- `pnpm test:worker` — run the production Worker integration suite inside Cloudflare's local runtime.
+- `pnpm test:smoke` — smoke-test a Worker already running at `http://127.0.0.1:8787`.
+- `pnpm build` — build the rules, web assets, and Worker deployment bundle.
 - `pnpm deploy:dry` — validate the complete Cloudflare deployment without publishing it.
 - `pnpm deploy` — build and publish Slidescape to Cloudflare.
 
@@ -83,4 +84,3 @@ Do not commit `.dev.vars`, credentials, API tokens, or other secrets. Slidescape
 - `packages/game` — deterministic rules, board configuration, cards, protocol types, and tests.
 - `apps/worker` — Cloudflare Worker, matchmaking, room Durable Objects, persistence, alarms, and WebSockets.
 - `apps/web` — responsive React/Vite client.
-- `apps/server` — legacy local Fastify/Socket.IO implementation retained temporarily for regression comparison.

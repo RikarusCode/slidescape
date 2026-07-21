@@ -10,5 +10,5 @@
       "@slidescape/game": ["packages/game/src/index.ts"]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "vitest.config.ts"]
 }

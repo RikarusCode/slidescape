@@ -1,10 +1,26 @@
 import type { GameMode } from "@slidescape/game";
 
 export const SESSION_KEY = "slidescape-session-v1";
-export interface Session { playerId: string; reconnectToken: string; roomId?: string }
+export interface Session {
+  playerId: string;
+  reconnectToken: string;
+  roomId?: string;
+}
 
-interface ActionReply { ok: boolean; message?: string; waiting?: boolean; roomId?: string; lobby?: unknown; game?: unknown }
-interface WireMessage { id?: string; event?: string; payload?: unknown; replyTo?: string }
+interface ActionReply {
+  ok: boolean;
+  message?: string;
+  waiting?: boolean;
+  roomId?: string;
+  lobby?: unknown;
+  game?: unknown;
+}
+interface WireMessage {
+  id?: string;
+  event?: string;
+  payload?: unknown;
+  replyTo?: string;
+}
 type Listener = (value: unknown) => void;
 type ReplyCallback = (error: Error | null, reply?: ActionReply) => void;
 
@@ -12,7 +28,9 @@ export interface GameSocket {
   readonly connected: boolean;
   on<T = undefined>(event: string, listener: (value: T) => void): GameSocket;
   emit(event: string, ...values: unknown[]): GameSocket;
-  timeout(milliseconds: number): { emit: (event: string, ...values: unknown[]) => void };
+  timeout(milliseconds: number): {
+    emit: (event: string, ...values: unknown[]) => void;
+  };
   disconnect(): void;
 }
 
@@ -20,7 +38,9 @@ export function readSession(): Session | undefined {
   try {
     const parsed = JSON.parse(localStorage.getItem(SESSION_KEY) ?? "null") as Session | null;
     return parsed?.playerId && parsed.reconnectToken ? parsed : undefined;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
 function websocketUrl(path: string): string {
@@ -43,7 +63,10 @@ class SlidescapeSocket implements GameSocket {
 
   constructor(name: string) {
     this.name = name;
-    this.identity = readSession() ?? { playerId: crypto.randomUUID(), reconnectToken: crypto.randomUUID() };
+    this.identity = readSession() ?? {
+      playerId: crypto.randomUUID(),
+      reconnectToken: crypto.randomUUID()
+    };
     queueMicrotask(() => void this.start());
   }
 
@@ -60,7 +83,11 @@ class SlidescapeSocket implements GameSocket {
   }
 
   timeout(milliseconds: number) {
-    return { emit: (event: string, ...values: unknown[]) => { void this.dispatch(event, values, milliseconds); } };
+    return {
+      emit: (event: string, ...values: unknown[]) => {
+        void this.dispatch(event, values, milliseconds);
+      }
+    };
   }
 
   disconnect(): void {
@@ -78,13 +105,19 @@ class SlidescapeSocket implements GameSocket {
     this.fire("session", { ...this.identity });
     if (this.identity.roomId) {
       try {
-        const reply = await this.post("/api/reconnect", { ...this.identity, name: this.name });
+        const reply = await this.post("/api/reconnect", {
+          ...this.identity,
+          name: this.name
+        });
         if (reply.ok) {
           this.openRoom(this.identity.roomId);
           return;
         }
         delete this.identity.roomId;
-        this.fire("session-reset", reply.message ?? "Your previous match is no longer available. You can start a new game.");
+        this.fire(
+          "session-reset",
+          reply.message ?? "Your previous match is no longer available. You can start a new game."
+        );
       } catch {
         this.fire("connect_error", new Error("Could not reach the game server."));
         return;
@@ -94,10 +127,11 @@ class SlidescapeSocket implements GameSocket {
   }
 
   private async dispatch(event: string, values: unknown[], timeoutMs: number): Promise<void> {
-    const callback = typeof values.at(-1) === "function" ? values.pop() as ReplyCallback : undefined;
+    const callback = typeof values.at(-1) === "function" ? (values.pop() as ReplyCallback) : undefined;
     const payload = values[0];
     try {
-      if (event === "create-private") return void this.httpRoomAction("/api/private/create", payload, callback);
+      if (event === "create-private")
+        return void this.httpRoomAction("/api/private/create", payload, callback);
       if (event === "join-private") return void this.httpRoomAction("/api/private/join", payload, callback);
       if (event === "play-bot") return void this.httpRoomAction("/api/bot", payload, callback);
       if (event === "join-queue") return void this.openQueue((payload as { mode: GameMode }).mode, callback);
@@ -115,7 +149,11 @@ class SlidescapeSocket implements GameSocket {
 
   private async httpRoomAction(path: string, payload: unknown, callback?: ReplyCallback): Promise<void> {
     try {
-      const reply = await this.post(path, { ...(payload as object), ...this.identity, name: this.name });
+      const reply = await this.post(path, {
+        ...(payload as object),
+        ...this.identity,
+        name: this.name
+      });
       if (reply.ok && reply.roomId) {
         this.setRoom(reply.roomId);
         if (reply.lobby) this.fire("lobby-state", reply.lobby);
@@ -123,39 +161,78 @@ class SlidescapeSocket implements GameSocket {
         this.openRoom(reply.roomId);
       }
       callback?.(null, reply);
-    } catch (error) { callback?.(error instanceof Error ? error : new Error("The game server did not respond.")); }
+    } catch (error) {
+      callback?.(error instanceof Error ? error : new Error("The game server did not respond."));
+    }
   }
 
   private openQueue(mode: GameMode, callback?: ReplyCallback): void {
     this.queueSocket?.close(1000, "Queue replaced");
-    const query = new URLSearchParams({ playerId: this.identity.playerId, reconnectToken: this.identity.reconnectToken, name: this.name });
+    const query = new URLSearchParams({
+      playerId: this.identity.playerId,
+      reconnectToken: this.identity.reconnectToken,
+      name: this.name
+    });
     const socket = new WebSocket(websocketUrl(`/ws/queue/${mode}?${query}`));
+    let opened = false;
+    let completed = false;
     this.queueSocket = socket;
-    socket.addEventListener("open", () => {
-      this.setConnected(true);
-      callback?.(null, { ok: true, waiting: true });
-    }, { once: true });
+    socket.addEventListener(
+      "open",
+      () => {
+        opened = true;
+        this.setConnected(true);
+        callback?.(null, { ok: true, waiting: true });
+      },
+      { once: true }
+    );
     socket.addEventListener("message", (event) => {
       const message = this.decode(event.data);
       if (message?.event === "matched") {
         const roomId = (message.payload as { roomId?: string } | undefined)?.roomId;
         if (roomId) {
+          completed = true;
           this.queueSocket = undefined;
           this.setRoom(roomId);
           this.openRoom(roomId);
         }
       }
     });
-    socket.addEventListener("error", () => callback?.(new Error("Could not join matchmaking.")), { once: true });
+    socket.addEventListener(
+      "error",
+      () => {
+        if (!opened && !completed) {
+          completed = true;
+          callback?.(new Error("Could not join matchmaking."));
+        }
+      },
+      { once: true }
+    );
+    socket.addEventListener(
+      "close",
+      () => {
+        if (this.queueSocket !== socket) return;
+        this.queueSocket = undefined;
+        if (!completed) {
+          this.fire("connect_error", new Error("Matchmaking disconnected. Please try again."));
+        }
+      },
+      { once: true }
+    );
   }
 
   private openRoom(roomId: string): void {
     if (this.stopped) return;
     this.roomSocket?.close(1000, "Room replaced");
-    const query = new URLSearchParams({ playerId: this.identity.playerId, reconnectToken: this.identity.reconnectToken });
+    const query = new URLSearchParams({
+      playerId: this.identity.playerId,
+      reconnectToken: this.identity.reconnectToken
+    });
     const socket = new WebSocket(websocketUrl(`/ws/room/${encodeURIComponent(roomId)}?${query}`));
     this.roomSocket = socket;
     socket.addEventListener("open", () => {
+      if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
       this.reconnectAttempt = 0;
       this.setConnected(true);
     });
@@ -179,7 +256,12 @@ class SlidescapeSocket implements GameSocket {
     }, delay);
   }
 
-  private sendRoom(event: string, payload: unknown, callback: ReplyCallback | undefined, timeoutMs: number): void {
+  private sendRoom(
+    event: string,
+    payload: unknown,
+    callback: ReplyCallback | undefined,
+    timeoutMs: number
+  ): void {
     const socket = this.roomSocket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       callback?.(new Error("The room connection is not ready."));
@@ -220,13 +302,28 @@ class SlidescapeSocket implements GameSocket {
   }
 
   private decode(value: unknown): WireMessage | undefined {
-    try { return JSON.parse(typeof value === "string" ? value : "") as WireMessage; }
-    catch { return undefined; }
+    try {
+      return JSON.parse(typeof value === "string" ? value : "") as WireMessage;
+    } catch {
+      return undefined;
+    }
   }
 
   private async post(path: string, payload: unknown): Promise<ActionReply> {
-    const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    const reply = await response.json() as ActionReply;
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    let reply: ActionReply;
+    try {
+      reply = (await response.json()) as ActionReply;
+    } catch {
+      throw new Error(`The game server returned an invalid response (${response.status}).`);
+    }
+    if (!response.ok && !reply.message) {
+      throw new Error(`The game server rejected the request (${response.status}).`);
+    }
     return reply;
   }
 

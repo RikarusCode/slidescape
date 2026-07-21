@@ -20,7 +20,13 @@ function formatTime(milliseconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export const TurnTimer = memo(function TurnTimer({ deadline, durationSeconds, activePlayerName, activePlayerColor, isMyTurn }: TurnTimerProps) {
+export const TurnTimer = memo(function TurnTimer({
+  deadline,
+  durationSeconds,
+  activePlayerName,
+  activePlayerColor,
+  isMyTurn
+}: TurnTimerProps) {
   const [remaining, setRemaining] = useState(() => remainingUntil(deadline));
 
   useEffect(() => {
@@ -39,12 +45,20 @@ export const TurnTimer = memo(function TurnTimer({ deadline, durationSeconds, ac
     "--timer-progress": `${progress * 360}deg`
   } as CSSProperties;
 
-  return <div className={`turn-timer ${urgent ? "urgent" : ""}`} style={style} role="timer" aria-live={urgent ? "polite" : "off"} aria-label={`${formatTime(remaining)} remaining in ${activePlayerName}'s turn`}>
-    <div className="turn-timer-ring">
-      <div className="turn-timer-face">
-        <span>{isMyTurn ? "Your turn" : activePlayerName}</span>
-        <strong>{formatTime(remaining)}</strong>
+  return (
+    <div
+      className={`turn-timer ${urgent ? "urgent" : ""}`}
+      style={style}
+      role="timer"
+      aria-live={urgent ? "polite" : "off"}
+      aria-label={`${formatTime(remaining)} remaining in ${activePlayerName}'s turn`}
+    >
+      <div className="turn-timer-ring">
+        <div className="turn-timer-face">
+          <span>{isMyTurn ? "Your turn" : activePlayerName}</span>
+          <strong>{formatTime(remaining)}</strong>
+        </div>
       </div>
     </div>
-  </div>;
+  );
 });

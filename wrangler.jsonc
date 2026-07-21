@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "slidescape",
   "main": "./apps/worker/src/index.ts",
-  "compatibility_date": "2026-07-19",
+  "compatibility_date": "2026-07-20",
   "assets": {
     "directory": "./apps/web/dist",
     "binding": "ASSETS",

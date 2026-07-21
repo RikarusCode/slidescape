@@ -1,4 +1,4 @@
-import type { GameMode, TurnTimerSeconds } from "@slidescape/game";
+import type { GameMode, GameState, TurnTimerSeconds } from "@slidescape/game";
 import type { ActionReply, SessionIdentity, WireMessage } from "./types.js";
 
 export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -28,12 +28,17 @@ export function privateCode(): string {
 
 export function cleanIdentity(input: Partial<SessionIdentity>): SessionIdentity {
   const playerId = typeof input.playerId === "string" && input.playerId.length <= 64 ? input.playerId : "";
-  const reconnectToken = typeof input.reconnectToken === "string" && input.reconnectToken.length <= 128 ? input.reconnectToken : "";
-  if (!playerId || !reconnectToken) throw new Error("Your game session is invalid. Return home and try again.");
+  const reconnectToken =
+    typeof input.reconnectToken === "string" && input.reconnectToken.length <= 128
+      ? input.reconnectToken
+      : "";
+  if (!playerId || !reconnectToken)
+    throw new Error("Your game session is invalid. Return home and try again.");
   return {
     playerId,
     reconnectToken,
-    name: typeof input.name === "string" ? input.name.trim().slice(0, 24) || "Penguin Player" : "Penguin Player"
+    name:
+      typeof input.name === "string" ? input.name.trim().slice(0, 24) || "Penguin Player" : "Penguin Player"
   };
 }
 
@@ -44,8 +49,12 @@ export function parseWireMessage(value: string | ArrayBuffer): WireMessage {
   return parsed;
 }
 
+export function serializeEvent(event: string, payload?: unknown): string {
+  return JSON.stringify({ event, payload } satisfies WireMessage);
+}
+
 export function sendEvent(socket: WebSocket, event: string, payload?: unknown): void {
-  socket.send(JSON.stringify({ event, payload } satisfies WireMessage));
+  socket.send(serializeEvent(event, payload));
 }
 
 export function sendReply(socket: WebSocket, replyTo: string | undefined, payload: ActionReply): void {
@@ -53,5 +62,16 @@ export function sendReply(socket: WebSocket, replyTo: string | undefined, payloa
 }
 
 export function json(data: unknown, status = 200): Response {
-  return Response.json(data, { status, headers: { "cache-control": "no-store" } });
+  return Response.json(data, {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff"
+    }
+  });
+}
+
+/** Remove server-only deck order before a game state crosses the network. */
+export function publicGameState(state: GameState): GameState {
+  return { ...state, fishDeck: [], poopDeck: [] };
 }

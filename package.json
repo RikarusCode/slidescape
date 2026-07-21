@@ -4,17 +4,23 @@
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "dev": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --parallel --filter @slidescape/worker --filter @slidescape/web dev",
-    "build": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/server build && pnpm --filter @slidescape/web build && pnpm --filter @slidescape/worker build",
+    "build": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --filter @slidescape/worker build",
+    "benchmark:rules": "pnpm --filter @slidescape/game build && node scripts/benchmark-rules.mjs",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry": "pnpm build && wrangler deploy --dry-run",
-    "test": "pnpm --filter @slidescape/game build && vitest run",
-    "test:worker": "node scripts/smoke-worker.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm --filter @slidescape/game build && vitest run --config vitest.config.ts && pnpm test:worker",
+    "test:worker": "vitest run --config apps/worker/vitest.config.ts --maxWorkers=1 --no-isolate",
+    "test:smoke": "node scripts/smoke-worker.mjs",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.18.6",
     "@cloudflare/workers-types": "^5.20260719.1",
+    "prettier": "3.6.2",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.0",
     "wrangler": "^4.112.0"
   }
 }
