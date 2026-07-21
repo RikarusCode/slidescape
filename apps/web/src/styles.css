@@ -2706,6 +2706,17 @@ a:focus-visible {
   grid-column: 4;
   justify-self: stretch;
   justify-content: flex-end;
+  gap: clamp(0.5rem, 0.8vw, 0.7rem);
+  min-width: max-content;
+}
+.connection > .rules-button,
+.connection > .game-settings-wrap,
+.connection > .reconnect-status {
+  flex: 0 0 auto;
+}
+.game-settings-wrap {
+  display: grid;
+  place-items: center;
 }
 .reconnect-status {
   width: 38px;

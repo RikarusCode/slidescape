@@ -205,7 +205,7 @@ export function RulesButton({ className = "" }: { className?: string }) {
                   Chickapig board game
                 </a>
                 . Slidescape is an independent fan-made project and is not affiliated with, sponsored by, or
-                endorsed by Chickapig or its creators. Check out the open source code on{" "}
+                endorsed by Chickapig or its creators. Check out the open source code for Slidescape on{" "}
                 <a href="https://github.com/RikarusCode/slidescape" target="_blank" rel="noreferrer">
                   GitHub
                 </a>
