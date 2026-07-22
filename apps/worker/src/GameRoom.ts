@@ -33,7 +33,7 @@ import type { ActionReply, PublicLobby, RoomMember, RoomSnapshot, SessionIdentit
 interface SocketAttachment {
   memberId: string;
 }
-const BOT_ACTION_DELAY_MS = 700;
+const BOT_ACTION_DELAY_MS = 750;
 const BOT_ROLL_DELAY_MS = 1_000;
 const BOT_OPENING_DELAY_MS = 1_100;
 const BOT_NAMES = [
