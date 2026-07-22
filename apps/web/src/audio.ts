@@ -38,13 +38,13 @@ const IS_MOBILE =
 // effects ceiling so the mix always favors gameplay sounds; the effects bus is
 // allowed to amplify past 1.0 (a limiter downstream tames the peaks), and even
 // harder on mobile.
-const MUSIC_MAX_GAIN = 0.3;
-const EFFECTS_MAX_GAIN = IS_MOBILE ? 5.0 : 1.7;
+const MUSIC_MAX_GAIN = 0.4;
+const EFFECTS_MAX_GAIN = IS_MOBILE ? 2.5 : 1.7;
 
 // Slider response curve. An exponent > 1 stretches the usable range: low
 // positions get much quieter and the top end stands out, so each slider feels
 // like it has real extremes instead of bunching everything near the middle.
-const SLIDER_CURVE = 2.5;
+const SLIDER_CURVE = 1.8;
 
 const DEFAULT_SETTINGS: AudioSettings = { music: 0.35, effects: 0.85 };
 const clamp = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
@@ -130,6 +130,8 @@ class SlidescapeAudio {
   private listeners = new Set<() => void>();
   private context?: AudioContext;
   private effectsBus?: GainNode;
+  private musicGain?: GainNode;
+  private musicSource?: MediaElementAudioSourceNode;
   private noise?: AudioBuffer;
   private slideBuffer?: AudioBuffer;
   private slideBufferPromise?: Promise<AudioBuffer | undefined>;
@@ -243,6 +245,14 @@ class SlidescapeAudio {
     limiter.attack.value = 0.003;
     limiter.release.value = 0.12;
     this.effectsBus.connect(limiter).connect(context.destination);
+    // Music runs through its own gain node so its level is controlled by Web
+    // Audio, not by HTMLAudioElement.volume -- which mobile Safari/iOS ignores
+    // entirely (there, the element always plays at the device's hardware
+    // volume). Routing it here is what lets the music slider actually work on
+    // phones instead of the music drowning every effect.
+    this.musicGain = context.createGain();
+    this.musicGain.connect(context.destination);
+    this.wireMusicSource();
     this.noise = this.createNoise(context);
     this.applyVolumes();
     return context;
@@ -257,18 +267,38 @@ class SlidescapeAudio {
     music.addEventListener("ended", () => this.playNextTrack(this.musicGeneration));
     music.addEventListener("error", () => this.retryAfterMusicError());
     this.music = music;
+    this.wireMusicSource();
     this.applyVolumes();
     return music;
   }
 
+  // Tap the music element into the Web Audio graph (once) so `musicGain`
+  // governs its volume. Falls back silently to element volume if the browser
+  // cannot create the source node.
+  private wireMusicSource() {
+    if (this.musicSource || !this.context || !this.music || !this.musicGain) return;
+    try {
+      this.musicSource = this.context.createMediaElementSource(this.music);
+      this.musicSource.connect(this.musicGain);
+    } catch {
+      // Leave musicSource unset; applyVolumes will use element volume instead.
+    }
+  }
+
   private applyVolumes() {
-    if (this.context)
+    const musicLevel = curvedGain(this.settings.music, MUSIC_MAX_GAIN);
+    if (this.context) {
       this.effectsBus?.gain.setTargetAtTime(
         curvedGain(this.settings.effects, EFFECTS_MAX_GAIN),
         this.context.currentTime,
         0.02
       );
-    if (this.music) this.music.volume = curvedGain(this.settings.music, MUSIC_MAX_GAIN);
+      this.musicGain?.gain.setTargetAtTime(musicLevel, this.context.currentTime, 0.02);
+    }
+    // When routed through Web Audio (musicGain), the element itself stays at
+    // full volume and musicGain does the attenuation (works on iOS). Otherwise
+    // fall back to controlling the element directly.
+    if (this.music) this.music.volume = this.musicSource ? 1 : musicLevel;
   }
 
   private createNoise(context: AudioContext) {
