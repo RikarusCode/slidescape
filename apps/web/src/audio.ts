@@ -25,8 +25,30 @@ interface MusicTrack {
 const STORAGE_KEY = "slidescape-audio-v1";
 const AUDIO_ROOT = "/assets/audio";
 const SLIDE_SOUND = `${AUDIO_ROOT}/penguin-slide-v1.mp3`;
-const DEFAULT_SETTINGS: AudioSettings = { music: 0.38, effects: 0.72 };
+
+// Weak phone speakers let the music bury the gameplay sounds, so effects are
+// boosted much harder on touch devices. `(pointer: coarse)` is a reliable proxy
+// for phones/tablets, with a user-agent fallback.
+const IS_MOBILE =
+  typeof window !== "undefined" &&
+  (window.matchMedia?.("(pointer: coarse)")?.matches === true ||
+    (typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)));
+
+// Gain applied when a slider sits at its maximum. Music is kept well below the
+// effects ceiling so the mix always favors gameplay sounds; the effects bus is
+// allowed to amplify past 1.0 (a limiter downstream tames the peaks), and even
+// harder on mobile.
+const MUSIC_MAX_GAIN = 0.4;
+const EFFECTS_MAX_GAIN = IS_MOBILE ? 2.6 : 1.7;
+
+// Slider response curve. An exponent > 1 stretches the usable range: low
+// positions get much quieter and the top end stands out, so each slider feels
+// like it has real extremes instead of bunching everything near the middle.
+const SLIDER_CURVE = 1.8;
+
+const DEFAULT_SETTINGS: AudioSettings = { music: 0.4, effects: 0.85 };
 const clamp = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+const curvedGain = (value: number, ceiling: number) => Math.pow(clamp(value), SLIDER_CURVE) * ceiling;
 const midiFrequency = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
 
 const MUSIC = {
@@ -212,7 +234,15 @@ class SlidescapeAudio {
     const context = new window.AudioContext({ latencyHint: "interactive" });
     this.context = context;
     this.effectsBus = context.createGain();
-    this.effectsBus.connect(context.destination);
+    // A limiter after the effects bus lets us boost effects loudly (especially
+    // on mobile) without harsh clipping when several sounds overlap.
+    const limiter = context.createDynamicsCompressor();
+    limiter.threshold.value = -6;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.12;
+    this.effectsBus.connect(limiter).connect(context.destination);
     this.noise = this.createNoise(context);
     this.applyVolumes();
     return context;
@@ -233,8 +263,12 @@ class SlidescapeAudio {
 
   private applyVolumes() {
     if (this.context)
-      this.effectsBus?.gain.setTargetAtTime(this.settings.effects, this.context.currentTime, 0.02);
-    if (this.music) this.music.volume = this.settings.music * 0.32;
+      this.effectsBus?.gain.setTargetAtTime(
+        curvedGain(this.settings.effects, EFFECTS_MAX_GAIN),
+        this.context.currentTime,
+        0.02
+      );
+    if (this.music) this.music.volume = curvedGain(this.settings.music, MUSIC_MAX_GAIN);
   }
 
   private createNoise(context: AudioContext) {

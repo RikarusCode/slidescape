@@ -115,7 +115,7 @@ function ProgressChart({ state }: { state: GameState }) {
           );
         })}
         <text x={width / 2} y={height - 5} textAnchor="middle" className="chart-caption">
-          Move number (0–{lastMove})
+          Move number
         </text>
       </svg>
       <div className="chart-legend">
