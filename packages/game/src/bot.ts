@@ -192,13 +192,19 @@ function buildBoardView(state: GameState): BoardView {
   }
 
   // A color's own pieces don't block its own goal reachability (they can move
-  // out of the way later); opponents' pieces and ice do. Exactly 4 BFS passes.
+  // out of the way later); opponents' pieces and ice do. Only colors actually
+  // in play get a BFS -- in quick-2 that is 2 of 4, halving this hot path (it
+  // runs once per evaluate, per search node).
   const sameColorCells: Record<Color, number[]> = { green: [], yellow: [], red: [], blue: [] };
+  const presentColors = new Set<Color>();
   for (const piece of state.pieces) {
-    if (piece.color && !piece.scored) sameColorCells[piece.color].push(cellIndex(piece.position));
+    if (!piece.color) continue;
+    presentColors.add(piece.color);
+    if (!piece.scored) sameColorCells[piece.color].push(cellIndex(piece.position));
   }
   const distanceMaps = {} as Record<Color, Int16Array>;
   for (const color of COLORS) {
+    if (!presentColors.has(color)) continue;
     const blockers = new Set(occupied);
     for (const index of sameColorCells[color]) blockers.delete(index);
     distanceMaps[color] = goalDistances(color, blockers);
@@ -240,21 +246,44 @@ function classifyTier(piece: Piece, view: BoardView): TierResult {
 const SCORE_WEIGHT = 1_000;
 const WIN_WEIGHT = 100_000; // a reached target must dwarf any positional term.
 
-// Scoring pipeline (own pieces summed; opponents' scoring-readiness is a
-// discrete threat handled separately).
-const SCORING_READY_BONUS = 320; // in lane, clear shot to the edge -- a banked point.
-const ALIGNED_BONUS = 130; // in the lane track but blocked short.
-const SETUP_BONUS = 70; // one slide from landing in the lane track.
-const LATERAL_WEIGHT = 10; // -LATERAL_WEIGHT * sqrt(cells off the lane track).
-const OWN_PROGRESS_WEIGHT = 4; // demoted BFS gradient, tiebreak for far pieces only.
-const OPPONENT_PROGRESS_WEIGHT = 2; // opponents scored by their single best piece.
+// Tunable evaluation weights. These were fitted by self-play tuning (see the
+// tuning harness in the repo history); they are grouped here so they can be
+// swept without touching the logic. `__setBotWeights` (bottom of file) lets a
+// tuning script override them at runtime without recompiling.
+interface Weights {
+  scoringReady: number; // in lane, clear shot to the edge -- a banked point.
+  aligned: number; // in the lane track but blocked short.
+  setup: number; // one slide from landing in the lane track.
+  lateral: number; // -lateral * sqrt(cells off the lane track).
+  ownProgress: number; // demoted BFS gradient, mainly for far pieces.
+  oppProgress: number; // opponents scored by their single best piece.
+  oppScoring: number; // penalty per opponent one slide from scoring.
+  block: number; // we are the piece stopping an aligned opponent short.
+  fishHeld: number; // baseline value of holding any Fish card.
+  offenseUrgency: number; // multiplier on own scoring terms when we're 1 from a win.
+  defenseUrgency: number; // multiplier on defense terms when an opponent is 1 from a win.
+}
 
-// Defense.
-const OPP_SCORING_PENALTY = 600; // an opponent one slide from scoring (threat or concession).
-const BLOCK_BONUS = 40; // we are the piece stopping an aligned opponent short.
+const DEFAULT_WEIGHTS: Weights = {
+  scoringReady: 320,
+  aligned: 130,
+  setup: 70,
+  lateral: 10,
+  ownProgress: 4,
+  oppProgress: 2,
+  oppScoring: 600,
+  block: 40,
+  fishHeld: 30,
+  offenseUrgency: 1.4,
+  defenseUrgency: 1.8
+};
 
-// Cards / hazards.
-const FISH_CARD_VALUE: Record<FishCardId, number> = {
+let W: Weights = { ...DEFAULT_WEIGHTS };
+
+// Relative desirability of each Fish card (scaled by W.fishHeld / 30 so a
+// single knob can move overall card value during tuning while preserving the
+// cards' ordering).
+const FISH_CARD_RELATIVE: Record<FishCardId, number> = {
   "double-roll": 40,
   "relocate-and-roll": 40,
   "steal-or-two": 30,
@@ -262,10 +291,7 @@ const FISH_CARD_VALUE: Record<FishCardId, number> = {
   flyover: 20,
   "avoid-or-two": 20
 };
-
-// Urgency: escalate the right half of the eval when a win is one point away.
-const OFFENSE_URGENCY = 1.4;
-const DEFENSE_URGENCY = 1.8;
+const fishCardValue = (card: FishCardId): number => FISH_CARD_RELATIVE[card] * (W.fishHeld / 30);
 
 interface Urgency {
   offense: number;
@@ -281,8 +307,8 @@ function computeUrgency(state: GameState, botId: string): Urgency {
     else maxOpp = Math.max(maxOpp, player.score);
   }
   return {
-    offense: me < target && target - me <= 1 ? OFFENSE_URGENCY : 1,
-    defense: target - maxOpp <= 1 ? DEFENSE_URGENCY : 1
+    offense: me < target && target - me <= 1 ? W.offenseUrgency : 1,
+    defense: target - maxOpp <= 1 ? W.defenseUrgency : 1
   };
 }
 
@@ -320,7 +346,7 @@ function evaluate(state: GameState, botId: string): number {
   for (const player of state.players) {
     const sign = player.id === botId ? 1 : -1;
     total += sign * player.score * SCORE_WEIGHT;
-    if (player.fishCard) total += sign * FISH_CARD_VALUE[player.fishCard];
+    if (player.fishCard) total += sign * fishCardValue(player.fishCard);
     if (player.score >= target) total += sign * WIN_WEIGHT;
   }
 
@@ -336,25 +362,25 @@ function evaluate(state: GameState, botId: string): number {
     const dist = view.distanceMaps[piece.color]![cellIndex(piece.position)]!;
 
     if (own) {
-      if (tier === "scoring") ownTierValue += SCORING_READY_BONUS * urgency.offense;
-      else if (tier === "aligned") ownTierValue += ALIGNED_BONUS;
-      else if (tier === "setup") ownTierValue += SETUP_BONUS;
-      ownTierValue -= LATERAL_WEIGHT * Math.sqrt(offTrackDistance(piece.color, piece.position));
+      if (tier === "scoring") ownTierValue += W.scoringReady * urgency.offense;
+      else if (tier === "aligned") ownTierValue += W.aligned;
+      else if (tier === "setup") ownTierValue += W.setup;
+      ownTierValue -= W.lateral * Math.sqrt(offTrackDistance(piece.color, piece.position));
       ownProgress += progressValue(dist);
     } else {
       // A scoring-ready opponent is the sharpest signal there is -- captures
       // both "left an existing threat open" and "our move just created one".
-      if (tier === "scoring") total -= OPP_SCORING_PENALTY * urgency.defense;
+      if (tier === "scoring") total -= W.oppScoring * urgency.defense;
       // Reward being the piece that stops an aligned opponent short.
-      if (tier === "aligned" && blocker && blocker.ownerId === botId) total += BLOCK_BONUS * urgency.defense;
+      if (tier === "aligned" && blocker && blocker.ownerId === botId) total += W.block * urgency.defense;
       const value = progressValue(dist);
       const current = bestOpponentProgress.get(piece.ownerId);
       if (current === undefined || value > current) bestOpponentProgress.set(piece.ownerId, value);
     }
   }
   total += ownTierValue;
-  total += ownProgress * OWN_PROGRESS_WEIGHT;
-  for (const value of bestOpponentProgress.values()) total -= value * OPPONENT_PROGRESS_WEIGHT;
+  total += ownProgress * W.ownProgress;
+  for (const value of bestOpponentProgress.values()) total -= value * W.oppProgress;
 
   // Pending poop lands on whoever's turn it is.
   total += (state.turn.activePlayerId === botId ? -1 : 1) * pendingPoopPenalty(state);
@@ -448,7 +474,7 @@ function boardRandom(state: GameState): number {
 // greedy traps; opponents are handled statically by the eval's threat terms.
 // =====================================================================
 
-const SEARCH_MAX_DEPTH = 3;
+let SEARCH_MAX_DEPTH = 3;
 const EVAL_BUDGET = 1_500; // hard, deterministic cap on evaluate() calls per decision.
 const ICE_MOVE_BIAS = 3; // gentle nudge to prefer moving penguins in near-ties.
 const TIE_EPS = 6; // candidates within this of the best are "equivalent".
@@ -545,7 +571,18 @@ function searchBestMove(state: GameState, actorId: string, depth: number): Searc
   }
 
   const chosen = chooseWithVariety(scored, state, actorId);
-  return { move: chosen.candidate, after: move(state, actorId, chosen.candidate), value: chosen.value };
+  // Commit through the real engine. Candidates come from legalMoves so this
+  // should always succeed on the first try; if the engine ever disagrees, fall
+  // through to the next-best candidate rather than letting the turn die.
+  const ordered = [chosen, ...scored.filter((entry) => entry !== chosen)];
+  for (const entry of ordered) {
+    try {
+      return { move: entry.candidate, after: move(state, actorId, entry.candidate), value: entry.value };
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return undefined;
 }
 
 function chooseWithVariety(scored: ScoredCandidate[], state: GameState, actorId: string): ScoredCandidate {
@@ -650,47 +687,66 @@ function alreadyUsable(state: GameState, actorId: string): boolean {
   return Boolean(player && player.fishDrawnTurn !== state.turn.number);
 }
 
+// The engine is the source of truth for legality. The bot's preconditions try
+// to mirror it, but rather than trust that mirror perfectly, every speculative
+// card play is wrapped: if the engine rejects it, we simply skip that option
+// and the planner moves on to the next (usually a normal search move). This
+// keeps the bot playing well in odd states instead of dropping to the
+// last-resort fallback, and means no precondition mismatch can throw.
+function tryFishPlay(state: GameState, actorId: string, play: FishPlay): BotActionResult | undefined {
+  try {
+    return { state: playFish(state, actorId, play), kind: "fish" };
+  } catch {
+    return undefined;
+  }
+}
+
 function tryPlayDoubleRoll(state: GameState, actorId: string): BotActionResult | undefined {
   const player = state.players.find((candidate) => candidate.id === actorId);
   if (player?.fishCard !== "double-roll" || !alreadyUsable(state, actorId)) return undefined;
-  return { state: playFish(state, actorId, { cardId: "double-roll" }), kind: "fish" };
+  return tryFishPlay(state, actorId, { cardId: "double-roll" });
 }
 
 function tryStartAvoidOrStealTwo(state: GameState, actorId: string): BotActionResult | undefined {
   const player = state.players.find((candidate) => candidate.id === actorId);
   if (!player || !alreadyUsable(state, actorId)) return undefined;
   if (player.fishCard === "avoid-or-two")
-    return { state: playFish(state, actorId, { cardId: "avoid-or-two", choice: "start" }), kind: "fish" };
+    return tryFishPlay(state, actorId, { cardId: "avoid-or-two", choice: "start" });
   // Only start a steal if there is actually a card to take; otherwise it is
   // just "add two", which we still want, so start it either way.
   if (player.fishCard === "steal-or-two")
-    return { state: playFish(state, actorId, { cardId: "steal-or-two", choice: "start" }), kind: "fish" };
+    return tryFishPlay(state, actorId, { cardId: "steal-or-two", choice: "start" });
   return undefined;
 }
 
 function resolvePendingFishChoice(state: GameState, actorId: string): BotActionResult {
   const pending = state.turn.pendingFishChoice!;
+  // keep-two is always legal once a choice is pending, so it is the safe
+  // fallback if the preferred (avoid/steal) resolution is somehow rejected.
+  const keepTwo = () => playFish(state, actorId, { cardId: pending.cardId, choice: "keep-two" });
+
   if (pending.cardId === "avoid-or-two") {
-    const choice = state.turn.pendingPoop.length > 0 ? "avoid" : "keep-two";
-    return { state: playFish(state, actorId, { cardId: "avoid-or-two", choice }), kind: "fish" };
+    const preferred = tryFishPlay(state, actorId, {
+      cardId: "avoid-or-two",
+      choice: state.turn.pendingPoop.length > 0 ? "avoid" : "keep-two"
+    });
+    return preferred ?? { state: keepTwo(), kind: "fish" };
   }
   // steal-or-two: take the most valuable opponent card, else keep the +2.
   let target: string | undefined;
   let targetValue = 0;
   for (const player of state.players) {
     if (player.id === actorId || !player.fishCard) continue;
-    const value = FISH_CARD_VALUE[player.fishCard];
+    const value = FISH_CARD_RELATIVE[player.fishCard];
     if (value > targetValue) {
       targetValue = value;
       target = player.id;
     }
   }
-  if (target)
-    return {
-      state: playFish(state, actorId, { cardId: "steal-or-two", choice: "steal", targetPlayerId: target }),
-      kind: "fish"
-    };
-  return { state: playFish(state, actorId, { cardId: "steal-or-two", choice: "keep-two" }), kind: "fish" };
+  const preferred = target
+    ? tryFishPlay(state, actorId, { cardId: "steal-or-two", choice: "steal", targetPlayerId: target })
+    : undefined;
+  return preferred ?? { state: keepTwo(), kind: "fish" };
 }
 
 function tryPlayFlyover(state: GameState, actorId: string): BotActionResult | undefined {
@@ -846,6 +902,15 @@ function resolveReturnPenguinChoice(state: GameState, actorId: string): GameStat
 
 // =====================================================================
 // Entry point: one engine transition per call.
+//
+// `advanceBotAction` must NEVER throw for a valid in-progress bot turn: the
+// server computes it eagerly and a throw there strands the turn with no
+// scheduled follow-up (the game visibly freezes). So the heuristic planner
+// runs inside a guard that, on any unexpected error, falls back to a simple
+// always-legal action. The fallback mirrors the engine's own forced-turn
+// completion: resolve pending choices, otherwise make one random legal move,
+// otherwise roll, otherwise end the turn. It preserves the one-action-per-call
+// contract (exactly one version bump) that the pacing loop depends on.
 // =====================================================================
 
 export function advanceBotAction(state: GameState, actorId: string): BotActionResult {
@@ -853,6 +918,46 @@ export function advanceBotAction(state: GameState, actorId: string): BotActionRe
   if (!active || state.status !== "playing" || state.turn.activePlayerId !== actorId) {
     throw new Error("The bot is not the active player.");
   }
+  try {
+    return planBotAction(state, actorId);
+  } catch {
+    return fallbackBotAction(state, actorId);
+  }
+}
+
+// A minimal, robust always-terminating action used only if the heuristic
+// planner throws. Uses the raw PRNG cursor as an index (like the original
+// bot); it is a safety valve, not a strategy, so quality does not matter --
+// only that it always produces exactly one legal engine transition.
+function fallbackBotAction(state: GameState, actorId: string): BotActionResult {
+  if (state.turn.pendingChoice) {
+    const option = state.turn.pendingChoice.options[state.seed % state.turn.pendingChoice.options.length]!;
+    const position = option.positions[state.seed % option.positions.length]!;
+    return { state: resolvePoopChoice(state, actorId, option.pieceId, position), kind: "choice" };
+  }
+  if (state.turn.pendingFishChoice) {
+    return {
+      state: playFish(state, actorId, { cardId: state.turn.pendingFishChoice.cardId, choice: "keep-two" }),
+      kind: "fish"
+    };
+  }
+  if (state.turn.phase === "awaiting-roll" && state.turn.forcedPieceOwnerIds?.length) {
+    const moves = legalMoves(state, actorId);
+    if (moves.length > 0)
+      return { state: move(state, actorId, moves[state.seed % moves.length]!), kind: "move" };
+    return { state: roll(state, actorId), kind: "roll" };
+  }
+  if (state.turn.phase === "awaiting-roll") return { state: roll(state, actorId), kind: "roll" };
+  if (state.turn.phase === "moving" && state.turn.movesRemaining > 0) {
+    const moves = legalMoves(state, actorId);
+    if (moves.length > 0)
+      return { state: move(state, actorId, moves[state.seed % moves.length]!), kind: "move" };
+  }
+  return { state: endTurn(state, actorId), kind: "end-turn" };
+}
+
+function planBotAction(state: GameState, actorId: string): BotActionResult {
+  const active = state.players.find((player) => player.id === actorId)!;
 
   if (state.turn.pendingChoice) {
     return { state: resolveReturnPenguinChoice(state, actorId), kind: "choice" };
@@ -915,4 +1020,31 @@ export function advanceBotAction(state: GameState, actorId: string): BotActionRe
   }
 
   return { state: endTurn(state, actorId), kind: "end-turn" };
+}
+
+// =====================================================================
+// Internal tuning hooks. Not part of the gameplay API -- they let an offline
+// self-play harness sweep evaluation weights and search depth without a
+// rebuild per configuration. Production never calls these, so the bot always
+// runs with DEFAULT_WEIGHTS at full depth.
+// =====================================================================
+
+/** @internal Override evaluation weights (merged over defaults). */
+export function __setBotWeights(patch: Partial<Weights>): void {
+  W = { ...DEFAULT_WEIGHTS, ...patch };
+}
+
+/** @internal Restore the shipped default weights. */
+export function __resetBotWeights(): void {
+  W = { ...DEFAULT_WEIGHTS };
+}
+
+/** @internal The shipped default weights (for a tuning harness to sweep from). */
+export function __defaultBotWeights(): Weights {
+  return { ...DEFAULT_WEIGHTS };
+}
+
+/** @internal Force a shallower search for fast weight tuning (production uses 3). */
+export function __setSearchMaxDepth(depth: number): void {
+  SEARCH_MAX_DEPTH = depth;
 }

@@ -49,6 +49,12 @@ type CommandInput = ClientCommand extends infer Command
 type SpecialMode = "elephant-seal-poop" | "elephant-seal-only" | "opponent" | "poop";
 const DIE_ICONS = [Dice1, Dice2, Dice3, Dice4, Dice5, Dice6] as const;
 
+function playerTokenBackground(player: GameState["players"][number]): string {
+  const [first, second] = player.flockThemeColors;
+  if (!first || !second) return PLAYER_COLOR_HEX[first ?? player.themeColor];
+  return `linear-gradient(90deg, ${PLAYER_COLOR_HEX[first]} 0 50%, ${PLAYER_COLOR_HEX[second]} 50% 100%)`;
+}
+
 export function GameView({
   state,
   playerId,
@@ -497,7 +503,7 @@ export function GameView({
         <aside className="game-sidebar">
           <section className="turn-panel">
             <div className="turn-title">
-              <span className="player-token" style={{ background: PLAYER_COLOR_HEX[active.themeColor] }} />
+              <span className="player-token" style={{ background: playerTokenBackground(active) }} />
               <h1>{isMyTurn ? "Your turn" : `${active.name}’s turn`}</h1>
             </div>
             <div className="roll-row">
@@ -585,10 +591,7 @@ export function GameView({
             <div>
               {state.players.map((player) => (
                 <div className="score-row" key={player.id}>
-                  <span
-                    className="player-token"
-                    style={{ background: PLAYER_COLOR_HEX[player.themeColor] }}
-                  />
+                  <span className="player-token" style={{ background: playerTokenBackground(player) }} />
                   <span>
                     <strong>{player.name}</strong>
                     {player.id === playerId ? <small>You</small> : null}
@@ -771,7 +774,7 @@ export function GameView({
                       >
                         <span
                           className="player-token"
-                          style={{ background: PLAYER_COLOR_HEX[target.themeColor] }}
+                          style={{ background: playerTokenBackground(target) }}
                         />
                         <span>
                           <strong>{target.name}</strong>

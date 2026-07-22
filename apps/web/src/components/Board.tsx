@@ -18,6 +18,7 @@ import {
   type GameState,
   type LegalMove,
   type Piece,
+  type PlayerState,
   type Position
 } from "@slidescape/game";
 import {
@@ -30,6 +31,12 @@ import {
 } from "./PieceGlyphs.js";
 
 const GRID = Array.from({ length: BOARD_SIZE + 1 }, (_, index) => index);
+
+function flockDisplayColor(player: PlayerState, color?: Color): string {
+  const index = color ? player.colors.indexOf(color) : 0;
+  return PLAYER_COLOR_HEX[player.flockThemeColors[index >= 0 ? index : 0] ?? player.themeColor];
+}
+
 const BOARD_CELLS = Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) => {
   const x = index % BOARD_SIZE;
   const y = Math.floor(index / BOARD_SIZE);
@@ -308,7 +315,7 @@ export const Board = memo(function Board({
       Object.fromEntries(
         COLOR_ORDER.map((color) => {
           const owner = state.players.find((player) => player.colors.includes(color));
-          return [color, owner ? PLAYER_COLOR_HEX[owner.themeColor] : COLOR_HEX[color]];
+          return [color, owner ? flockDisplayColor(owner, color) : COLOR_HEX[color]];
         })
       ) as Record<Color, string>,
     [state.players]
@@ -416,7 +423,7 @@ export const Board = memo(function Board({
             selected={piece.id === selectedId}
             selectable={selectableIds.has(piece.id)}
             fenceActive={state.fenceActive}
-            color={piece.ownerId ? PLAYER_COLOR_HEX[playerById.get(piece.ownerId)!.themeColor] : "#ffffff"}
+            color={piece.ownerId ? flockDisplayColor(playerById.get(piece.ownerId)!, piece.color) : "#ffffff"}
             elephantSealFacing={
               piece.kind === "elephant-seal" && state.fenceActive
                 ? startingFacing(viewer?.colors[0])

@@ -52,6 +52,7 @@ export interface PlayerState {
   name: string;
   colors: Color[];
   themeColor: PlayerColor;
+  flockThemeColors: PlayerColor[];
   score: number;
   connected: boolean;
   fishCard?: FishCardId;
@@ -108,7 +109,7 @@ export interface CardReveal {
 }
 
 export interface GameState {
-  schemaVersion: 5;
+  schemaVersion: 6;
   id: string;
   mode: GameMode;
   status: GameStatus;

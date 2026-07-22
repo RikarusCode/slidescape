@@ -20,6 +20,7 @@ import {
   type FishPlay,
   type LegalMove,
   type Piece,
+  type PlayerColor,
   type PlayerState,
   type Position
 } from "./types.js";
@@ -85,7 +86,7 @@ function playerColors(mode: GameMode): Color[][] {
   return COLOR_ORDER.map((color) => [color]);
 }
 
-function assignThemeColors(guests: GameGuest[], seed: number) {
+function assignFlockThemeColors(guests: GameGuest[], assignments: Color[][], seed: number) {
   const claimed = new Set(guests.flatMap((guest) => (guest.colorChoice ? [guest.colorChoice] : [])));
   if (claimed.size !== guests.filter((guest) => guest.colorChoice).length)
     throw new Error("Each player must have a distinct color.");
@@ -97,7 +98,15 @@ function assignThemeColors(guests: GameGuest[], seed: number) {
     nextSeed = advanced;
     return available.splice(Math.floor(value * available.length), 1)[0]!;
   });
-  return [colors, nextSeed] as const;
+  const flockColors = colors.map((color) => [color]);
+  for (let playerIndex = 0; playerIndex < assignments.length; playerIndex += 1) {
+    while (flockColors[playerIndex]!.length < assignments[playerIndex]!.length) {
+      const [value, advanced] = nextRandom(nextSeed);
+      nextSeed = advanced;
+      flockColors[playerIndex]!.push(available.splice(Math.floor(value * available.length), 1)[0]!);
+    }
+  }
+  return [flockColors, nextSeed] as const;
 }
 
 export function createGame(
@@ -109,12 +118,13 @@ export function createGame(
   const assignments = playerColors(mode);
   if (guests.length !== assignments.length)
     throw new Error(`${mode} requires ${assignments.length} players.`);
-  const [themeColors, afterColors] = assignThemeColors(guests, seed);
+  const [flockThemeColors, afterColors] = assignFlockThemeColors(guests, assignments, seed);
   const players: PlayerState[] = guests.map((guest, index) => ({
     id: guest.id,
     name: guest.name,
     colors: assignments[index]!,
-    themeColor: themeColors[index]!,
+    themeColor: flockThemeColors[index]![0]!,
+    flockThemeColors: flockThemeColors[index]!,
     score: 0,
     connected: true,
     effects: emptyEffects()
@@ -156,7 +166,7 @@ export function createGame(
   const [fishDeck, afterFish] = shuffle(expandedFishDeck(), afterFirstPlayer);
   const [poopDeck, afterPoop] = shuffle(expandedPoopDeck(), afterFish);
   const state: GameState = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     id,
     mode,
     status: "playing",
@@ -190,28 +200,49 @@ export function activePlayer(state: GameState): PlayerState {
   return player;
 }
 
-/** Upgrade room snapshots created before the elephant-seal theme update. */
+/** Upgrade persisted room snapshots to the current visual-theme schema. */
 export function migrateGameState(state: GameState): GameState {
   const stored = state as unknown as {
     schemaVersion: number;
+    seed: number;
+    players: Array<{
+      colors: Color[];
+      themeColor: PlayerColor;
+      flockThemeColors?: PlayerColor[];
+    }>;
     pieces: Array<{ id: string; kind: string }>;
     turn: Record<string, unknown>;
     log: string[];
   };
-  if (stored.schemaVersion >= 5) return state;
+  if (stored.schemaVersion >= 6) return state;
 
-  const legacyPieceName = ["wal", "rus"].join("");
-  for (const piece of stored.pieces) {
-    if (piece.id === legacyPieceName) piece.id = "elephant-seal";
-    if (piece.kind === legacyPieceName) piece.kind = "elephant-seal";
+  if (stored.schemaVersion < 5) {
+    const legacyPieceName = ["wal", "rus"].join("");
+    for (const piece of stored.pieces) {
+      if (piece.id === legacyPieceName) piece.id = "elephant-seal";
+      if (piece.kind === legacyPieceName) piece.kind = "elephant-seal";
+    }
+    const legacyRelocationsKey = `${legacyPieceName}RelocationsRemaining`;
+    if (legacyRelocationsKey in stored.turn) {
+      stored.turn.elephantSealRelocationsRemaining = stored.turn[legacyRelocationsKey];
+      delete stored.turn[legacyRelocationsKey];
+    }
+    stored.log = stored.log.map((entry) => entry.replace(new RegExp(legacyPieceName, "gi"), "elephant seal"));
   }
-  const legacyRelocationsKey = `${legacyPieceName}RelocationsRemaining`;
-  if (legacyRelocationsKey in stored.turn) {
-    stored.turn.elephantSealRelocationsRemaining = stored.turn[legacyRelocationsKey];
-    delete stored.turn[legacyRelocationsKey];
+
+  const used = new Set(stored.players.map((player) => player.themeColor));
+  const available = PLAYER_COLOR_ORDER.filter((color) => !used.has(color));
+  let nextSeed = stored.seed;
+  for (const player of stored.players) {
+    player.flockThemeColors = [player.themeColor];
+    while (player.flockThemeColors.length < player.colors.length) {
+      const [value, advanced] = nextRandom(nextSeed);
+      nextSeed = advanced;
+      player.flockThemeColors.push(available.splice(Math.floor(value * available.length), 1)[0]!);
+    }
   }
-  stored.log = stored.log.map((entry) => entry.replace(new RegExp(legacyPieceName, "gi"), "elephant seal"));
-  stored.schemaVersion = 5;
+  stored.seed = nextSeed;
+  stored.schemaVersion = 6;
   return stored as unknown as GameState;
 }
 

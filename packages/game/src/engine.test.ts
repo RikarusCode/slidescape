@@ -3,6 +3,7 @@ import {
   BOARD_SIZE,
   FISH_CARDS,
   ICE_POSITIONS,
+  PLAYER_COLOR_ORDER,
   POOP_CARDS,
   STARTING_POSITIONS,
   createGame,
@@ -37,20 +38,25 @@ describe("Slidescape setup", () => {
     const legacyName = ["wal", "rus"].join("");
     const stored = state as unknown as {
       schemaVersion: number;
+      players: Array<{ flockThemeColors?: string[] }>;
       pieces: Array<{ id: string; kind: string }>;
       turn: Record<string, unknown>;
     };
     const sharedPiece = stored.pieces.find((piece) => piece.id === "elephant-seal")!;
     stored.schemaVersion = 4;
+    stored.players.forEach((player) => delete player.flockThemeColors);
     sharedPiece.id = legacyName;
     sharedPiece.kind = legacyName;
     stored.turn[`${legacyName}RelocationsRemaining`] = 1;
 
     const migrated = migrateGameState(state);
 
-    expect(migrated.schemaVersion).toBe(5);
+    expect(migrated.schemaVersion).toBe(6);
     expect(migrated.pieces.some((piece) => piece.id === "elephant-seal")).toBe(true);
     expect(migrated.turn.elephantSealRelocationsRemaining).toBe(1);
+    expect(migrated.players.every((player) => player.flockThemeColors.length === player.colors.length)).toBe(
+      true
+    );
   });
 
   it.each([
@@ -140,7 +146,7 @@ describe("Slidescape setup", () => {
     expect(next.turn.activePlayerId).toBe(state.turnOrder[(priorIndex + 1) % state.turnOrder.length]);
   });
 
-  it("assigns seven-color choices uniquely and gives strategic teammates matching teams", () => {
+  it("assigns unique lobby colors while keeping both strategic flocks distinct", () => {
     const state = createGame(
       "themes",
       "strategic-2",
@@ -159,11 +165,38 @@ describe("Slidescape setup", () => {
       themeColor: "cobalt-blue"
     });
     expect(new Set(state.players.map((player) => player.themeColor)).size).toBe(2);
+    const flockColors = state.players.flatMap((player) => player.flockThemeColors);
+    expect(flockColors).toHaveLength(4);
+    expect(new Set(flockColors).size).toBe(4);
+    expect(flockColors.every((color) => PLAYER_COLOR_ORDER.includes(color))).toBe(true);
     expect(
       state.pieces
         .filter((piece) => piece.color === "green" || piece.color === "blue")
         .every((piece) => piece.ownerId === "p1")
     ).toBe(true);
+  });
+
+  it("randomly assigns every public or bot flock from the full player palette", () => {
+    for (const [mode, count] of [
+      ["quick-2", 2],
+      ["strategic-2", 2],
+      ["classic-4", 4]
+    ] as const) {
+      const state = createGame(`random-${mode}`, mode, guests(count), 73);
+      const colors = state.players.flatMap((player) => player.flockThemeColors);
+      expect(colors).toHaveLength(mode === "strategic-2" ? 4 : count);
+      expect(new Set(colors).size).toBe(colors.length);
+      expect(colors.every((color) => PLAYER_COLOR_ORDER.includes(color))).toBe(true);
+    }
+
+    const assignments = new Set(
+      Array.from({ length: 12 }, (_, seed) =>
+        createGame(`random-${seed}`, "quick-2", guests(2), seed + 1)
+          .players.flatMap((player) => player.flockThemeColors)
+          .join(",")
+      )
+    );
+    expect(assignments.size).toBeGreaterThan(1);
   });
 });
 

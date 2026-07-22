@@ -270,7 +270,7 @@ export class GameRoom extends DurableObject<Env> {
       if (deadline <= now) this.forfeitDisconnected(room, memberId);
     }
     if (room.game?.status === "playing" && room.botActionAt && room.botActionAt <= now) {
-      this.advanceScheduledBot(room);
+      await this.advanceScheduledBot(room);
       this.resetTurnDeadline(room);
     } else if (
       room.game?.status === "playing" &&
@@ -419,22 +419,39 @@ export class GameRoom extends DurableObject<Env> {
     if (room.botActionAt !== undefined) return;
     const game = room.game;
     const startedAt = Date.now();
-    const result = advanceBotAction(game, game.turn.activePlayerId);
+    let result;
+    try {
+      result = advanceBotAction(game, game.turn.activePlayerId);
+    } catch {
+      // A bot decision must never be able to freeze a room. If precomputing
+      // fails, skip the cached result and let the alarm fire; advanceScheduledBot
+      // recomputes and, if that also fails, force-completes the turn.
+      room.botActionAt = Date.now() + delay;
+      return;
+    }
     const elapsed = Date.now() - startedAt;
     room.pendingBotResult = { forVersion: game.version, state: result.state, kind: result.kind };
     room.botActionAt = Date.now() + Math.max(0, delay - elapsed);
   }
 
-  private advanceScheduledBot(room: RoomSnapshot): void {
+  private async advanceScheduledBot(room: RoomSnapshot): Promise<void> {
     const game = room.game;
     const pending = room.pendingBotResult;
     delete room.botActionAt;
     delete room.pendingBotResult;
     if (!game || game.status !== "playing" || !this.activeMemberIsBot(room)) return;
-    const result =
-      pending && pending.forVersion === game.version
-        ? { state: pending.state, kind: pending.kind }
-        : advanceBotAction(game, game.turn.activePlayerId);
+    let result: { state: typeof game; kind: string };
+    try {
+      result =
+        pending && pending.forVersion === game.version
+          ? { state: pending.state, kind: pending.kind }
+          : advanceBotAction(game, game.turn.activePlayerId);
+    } catch {
+      // Last-resort guard: if the bot cannot produce an action, force the turn
+      // to complete with simple legal moves rather than leaving the room frozen.
+      await this.completeTimedTurn(room);
+      return;
+    }
     room.game = result.state;
     this.scheduleBotAction(room, result.kind === "roll" ? BOT_ROLL_DELAY_MS : BOT_ACTION_DELAY_MS);
   }

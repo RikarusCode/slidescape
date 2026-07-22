@@ -19,7 +19,7 @@ export const PLAYER_COLOR_ORDER: PlayerColor[] = [
 export const PLAYER_COLOR_HEX: Record<PlayerColor, string> = {
   "arctic-teal": "#159D98",
   sunburst: "#F2A51B",
-  "coral-red": "#E84C5B",
+  "coral-red": "#f81919",
   "cobalt-blue": "#3568D4",
   "aurora-purple": "#784BC2",
   "berry-pink": "#D84B98",
@@ -28,7 +28,7 @@ export const PLAYER_COLOR_HEX: Record<PlayerColor, string> = {
 export const PLAYER_COLOR_LABEL: Record<PlayerColor, string> = {
   "arctic-teal": "Arctic",
   sunburst: "Sunburst",
-  "coral-red": "Coral",
+  "coral-red": "Crimson",
   "cobalt-blue": "Cobalt",
   "aurora-purple": "Aurora",
   "berry-pink": "Berry",

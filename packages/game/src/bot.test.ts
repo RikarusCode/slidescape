@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { advanceBotAction } from "./bot.js";
-import { createGame } from "./engine.js";
+import {
+  createGame,
+  drawFish,
+  endTurn,
+  legalMoves,
+  move,
+  playFish,
+  resolvePoopChoice,
+  roll
+} from "./engine.js";
 import { BOARD_SIZE, type GameMode, type GameState } from "./types.js";
 
 function gameWithBotFirst(): GameState {
@@ -99,5 +108,71 @@ describe("paced bot actions", () => {
     // ~700ms-paced turns in play, but far heavier than the trivial bot this
     // test's original 10s cap was sized for. The generous ceiling is headroom
     // for slower CI, not an expected runtime.
+  }, 60_000);
+
+  // Regression guard for the "bot froze mid-turn" bug: the server computes the
+  // bot's action eagerly, so if advanceBotAction ever throws for a valid bot
+  // turn the turn strands with no follow-up scheduled and the game visibly
+  // hangs. It must ALWAYS return exactly one legal engine transition. This
+  // plays many games where a chaotic random "human" perturbs the board into the
+  // odd late-game states pure self-play never reaches.
+  it("never throws and always advances exactly one action for a valid bot turn", () => {
+    let rng = 123456789;
+    const rnd = () => (rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const pick = <T>(items: T[]): T => items[Math.floor(rnd() * items.length)]!;
+
+    const humanAction = (state: GameState, actorId: string): GameState => {
+      const t = state.turn;
+      try {
+        if (t.pendingChoice) {
+          const option = pick(t.pendingChoice.options);
+          return resolvePoopChoice(state, actorId, option.pieceId, pick(option.positions));
+        }
+        if (t.pendingFishChoice)
+          return playFish(state, actorId, { cardId: t.pendingFishChoice.cardId, choice: "keep-two" });
+        if (t.phase === "awaiting-roll" && t.forcedPieceOwnerIds?.length) {
+          const moves = legalMoves(state, actorId);
+          return moves.length ? move(state, actorId, pick(moves)) : roll(state, actorId);
+        }
+        if (t.phase === "awaiting-roll") return roll(state, actorId);
+        if (t.phase === "moving" && t.movesRemaining > 0) {
+          const player = state.players.find((candidate) => candidate.id === actorId)!;
+          if (t.fishDrawAvailable && !player.fishCard && rnd() < 0.5) return drawFish(state, actorId);
+          const moves = legalMoves(state, actorId);
+          if (moves.length) return move(state, actorId, pick(moves));
+        }
+        return endTurn(state, actorId);
+      } catch {
+        return endTurn(state, actorId);
+      }
+    };
+
+    // Kept deliberately small so the whole file stays well under the timeout;
+    // it samples varied mid/late-game states rather than playing games out.
+    const scenarios: Array<{ mode: GameMode; ids: string[]; seed: number }> = [
+      { mode: "quick-2", ids: ["human", "bot"], seed: 1 },
+      { mode: "quick-2", ids: ["human", "bot"], seed: 2 },
+      { mode: "strategic-2", ids: ["human", "bot"], seed: 1 },
+      { mode: "strategic-2", ids: ["human", "bot"], seed: 2 },
+      { mode: "strategic-2", ids: ["human", "bot"], seed: 3 },
+      { mode: "classic-4", ids: ["human", "bot", "bot2", "bot3"], seed: 1 }
+    ];
+    const isBot = (id: string) => id.startsWith("bot");
+
+    for (const { mode, ids, seed } of scenarios) {
+      const guests = ids.map((id) => ({ id, name: id }));
+      let state = createGame(`crash-guard-${mode}-${seed}`, mode, guests, seed);
+      for (let action = 0; action < 120 && state.status === "playing"; action += 1) {
+        const actor = state.turn.activePlayerId;
+        if (isBot(actor)) {
+          const before = state.version;
+          const result = advanceBotAction(state, actor); // must not throw
+          expect(result.state.version).toBe(before + 1);
+          state = result.state;
+        } else {
+          state = humanAction(state, actor);
+        }
+      }
+    }
   }, 60_000);
 });
