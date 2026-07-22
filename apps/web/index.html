@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#eaf7fd" />
 
+    <!--
+      The #seo-fallback block below is only for crawlers / AI fetchers that do
+      not run JavaScript. Hide it by default so JS-capable browsers never flash
+      it before React mounts; the <noscript> rule re-reveals it when JavaScript
+      is disabled. Crawlers that read raw HTML text still see it regardless.
+    -->
+    <style>
+      #seo-fallback {
+        display: none;
+      }
+    </style>
+    <noscript>
+      <style>
+        #seo-fallback {
+          display: block;
+        }
+      </style>
+    </noscript>
+
     <title>Slidescape — Free Online Chickapig-Style Strategy Board Game</title>
     <meta
       name="description"
@@ -99,6 +118,7 @@
     -->
     <div id="root">
       <main
+        id="seo-fallback"
         style="
           max-width: 44rem;
           margin: 0 auto;
