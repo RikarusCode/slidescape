@@ -38,8 +38,8 @@ const IS_MOBILE =
 // effects ceiling so the mix always favors gameplay sounds; the effects bus is
 // allowed to amplify past 1.0 (a limiter downstream tames the peaks), and even
 // harder on mobile.
-const MUSIC_MAX_GAIN = 0.25;
-const EFFECTS_MAX_GAIN = IS_MOBILE ? 3.0 : 1.7;
+const MUSIC_MAX_GAIN = 0.3;
+const EFFECTS_MAX_GAIN = IS_MOBILE ? 5.0 : 1.7;
 
 // Slider response curve. An exponent > 1 stretches the usable range: low
 // positions get much quieter and the top end stands out, so each slider feels
