@@ -4,15 +4,148 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#eaf7fd" />
-    <meta name="description" content="Slidescape — a strategic online penguin board game on ice." />
+
+    <title>Slidescape — Free Online Chickapig-Style Strategy Board Game</title>
+    <meta
+      name="description"
+      content="Slidescape is a free online strategy board game inspired by Chickapig. Slide your penguins across a shared ice board, dodge ice blocks and the elephant seal, and escape through your goal. Play in your browser against AI bots or friends — no download, no sign-up."
+    />
+    <meta
+      name="keywords"
+      content="Slidescape, Chickapig, Chickapig alternative, Chickapig online, online board game, strategy board game, penguin board game, play Chickapig-style game free, browser board game, board game vs AI"
+    />
+    <link rel="canonical" href="https://playslidescape.com/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+
+    <!-- Open Graph / social + link-preview cards (used by many AI unfurlers too) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Slidescape" />
+    <meta property="og:title" content="Slidescape — Free Online Chickapig-Style Strategy Board Game" />
+    <meta
+      property="og:description"
+      content="A free online strategy board game inspired by Chickapig. Slide penguins across the ice to escape through your goal. Play vs AI bots or friends in your browser."
+    />
+    <meta property="og:url" content="https://playslidescape.com/" />
+    <meta property="og:image" content="https://playslidescape.com/assets/slidescape-ice-background.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Slidescape — Free Online Chickapig-Style Strategy Board Game" />
+    <meta
+      name="twitter:description"
+      content="A free online strategy board game inspired by Chickapig. Slide penguins across the ice to escape through your goal. Play vs AI bots or friends in your browser."
+    />
+    <meta name="twitter:image" content="https://playslidescape.com/assets/slidescape-ice-background.webp" />
+
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23071a33'/%3E%3Cellipse cx='32' cy='37' rx='18' ry='21' fill='white'/%3E%3Cpath d='M28 29l9 4-9 4z' fill='%23ff7145'/%3E%3C/svg%3E"
     />
-    <title>Slidescape</title>
+
+    <!-- Structured data: helps Google and AI answer engines understand the game. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Slidescape",
+        "url": "https://playslidescape.com/",
+        "description": "Slidescape is a free online strategy board game inspired by Chickapig. Players slide penguins across a shared ice board, past ice blocks and a roaming elephant seal, racing to escape their pieces through their own goal. Play in the browser against AI opponents or friends.",
+        "genre": ["Strategy", "Board Game", "Abstract Strategy"],
+        "gamePlatform": ["Web Browser"],
+        "applicationCategory": "Game",
+        "operatingSystem": "Any (web browser)",
+        "playMode": ["SinglePlayer", "MultiPlayer"],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "inLanguage": "en"
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is Slidescape a free alternative to Chickapig?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Slidescape is a free, independent online strategy board game inspired by Chickapig. You play it in your browser with no download or sign-up, against AI bots or friends. It is a fan-made adaptation and is not affiliated with or endorsed by Chickapig."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do you play Slidescape?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Roll to get a number of moves, then slide your penguins across the ice board. Penguins slide until they hit a piece, an ice block, the elephant seal, or the edge. Maneuver your penguins into your goal lane and escape enough of them through your goal before your opponents do."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I play Slidescape against the computer?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Slidescape includes AI opponents you can play solo, plus private rooms to play with friends and public matchmaking to play against other people online."
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      This content is rendered on the server as plain HTML so search engines and
+      AI crawlers (which usually do NOT run JavaScript) can read what Slidescape
+      is. When the game's JavaScript loads, React replaces everything inside
+      #root with the interactive app, so human players never see this fallback.
+    -->
+    <div id="root">
+      <main
+        style="
+          max-width: 44rem;
+          margin: 0 auto;
+          padding: 2rem 1.25rem;
+          font-family: system-ui, sans-serif;
+          color: #0b2545;
+          line-height: 1.6;
+        "
+      >
+        <h1>Slidescape — a free online Chickapig-style strategy board game</h1>
+        <p>
+          <strong>Slidescape</strong> is a free online strategy board game inspired by
+          <strong>Chickapig</strong>. Guide your flock of penguins across a shared ice board, weaving past ice
+          blocks and a roaming elephant seal, and race to escape your penguins through your own goal before
+          your opponents escape theirs. Play right in your browser — no download and no sign-up.
+        </p>
+
+        <h2>How to play</h2>
+        <p>
+          On your turn you roll for a number of moves and spend them sliding your pieces. A penguin slides in
+          a straight line until it is stopped by another piece, an ice block, the elephant seal, a fence, or
+          the board edge. Line your penguins up with your goal lane and slide them out to score. Ice blocks
+          and the elephant seal can be nudged to build paths for yourself or to block opponents. First player
+          to escape their target number of penguins wins.
+        </p>
+
+        <h2>Game modes</h2>
+        <ul>
+          <li><strong>Beginner</strong> — a quick two-player game, first to escape 4 penguins.</li>
+          <li><strong>Standard</strong> — a deeper two-player game to 10 escapes.</li>
+          <li><strong>Classic</strong> — a four-player free-for-all.</li>
+        </ul>
+
+        <h2>Play against AI or friends</h2>
+        <p>
+          Play solo against Slidescape's AI opponents, create a private room to play with friends using a room
+          code, or jump into public matchmaking to face other players online.
+        </p>
+
+        <p><a href="https://playslidescape.com/">Play Slidescape free in your browser →</a></p>
+
+        <p style="margin-top: 2rem; font-size: 0.85rem; color: #4a6b8a">
+          Loading the game… if nothing appears, please enable JavaScript in your browser. Slidescape is a
+          fan-made game and is not affiliated with or endorsed by Chickapig.
+        </p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,27 @@
+# Slidescape
+
+> Slidescape is a free online strategy board game inspired by Chickapig. Players slide penguins across a shared ice board — past ice blocks and a roaming elephant seal — racing to escape their penguins through their own goal. It runs entirely in the browser with no download or sign-up, and can be played against AI opponents, friends (via a private room code), or strangers through public matchmaking. Slidescape is a fan-made game and is not affiliated with or endorsed by Chickapig.
+
+## What it is
+
+- A free, browser-based abstract strategy board game.
+- A Chickapig-style / Chickapig alternative you can play online for free.
+- Single-player (vs AI bots) and multiplayer (private rooms + public matchmaking).
+
+## How to play
+
+- Roll for a number of moves each turn and spend them sliding your pieces.
+- Penguins slide in a straight line until blocked by a piece, an ice block, the elephant seal, a fence, or the board edge.
+- Ice blocks and the elephant seal can be repositioned to open paths or block opponents.
+- Line a penguin up with your goal lane and slide it out to score.
+- First to escape the target number of penguins wins.
+
+## Game modes
+
+- Beginner: quick two-player game, first to escape 4 penguins.
+- Standard: deeper two-player game to 10 escapes.
+- Classic: four-player free-for-all.
+
+## Links
+
+- Play Slidescape: https://playslidescape.com/
