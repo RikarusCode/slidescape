@@ -93,5 +93,11 @@ describe("paced bot actions", () => {
         expect(simulate(true)).toEqual(simulate(false));
       }
     }
-  }, 10_000);
+    // The heuristic bot does real per-move evaluation (bounded search plus
+    // goal-distance BFS), so a full 240-decision replay across all three
+    // modes takes a few seconds locally -- well within budget for the actual
+    // ~700ms-paced turns in play, but far heavier than the trivial bot this
+    // test's original 10s cap was sized for. The generous ceiling is headroom
+    // for slower CI, not an expected runtime.
+  }, 60_000);
 });

@@ -866,7 +866,7 @@ export function placeElephantSealAndPoop(
   state: GameState,
   actorId: string,
   to: Position,
-  options: { leavePoop?: boolean; poopFrom?: Position } = { leavePoop: true }
+  options: { leavePoop?: boolean } = { leavePoop: true }
 ): GameState {
   const next = structuredClone(state);
   const player = activePlayer(next);
@@ -890,8 +890,10 @@ export function placeElephantSealAndPoop(
       next.poop.push({ ...to });
       next.poopSupply -= 1;
     } else {
-      const index = options.poopFrom ? next.poop.findIndex((poop) => same(poop, options.poopFrom!)) : -1;
-      if (index < 0) throw new Error("Choose a poop token to recycle under the elephant seal.");
+      if (next.poop.length === 0) throw new Error("No poop token is available to recycle.");
+      const [value, seed] = nextRandom(next.seed);
+      next.seed = seed;
+      const index = Math.floor(value * next.poop.length);
       next.poop[index] = { ...to };
     }
   }

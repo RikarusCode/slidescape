@@ -32,7 +32,7 @@ export const TurnTimer = memo(function TurnTimer({
   useEffect(() => {
     setRemaining(remainingUntil(deadline));
     if (!deadline) return;
-    const interval = window.setInterval(() => setRemaining(remainingUntil(deadline)), 250);
+    const interval = window.setInterval(() => setRemaining(remainingUntil(deadline)), 1_000);
     return () => window.clearInterval(interval);
   }, [deadline]);
 
@@ -42,7 +42,7 @@ export const TurnTimer = memo(function TurnTimer({
   const urgent = remaining <= 10_000;
   const style = {
     "--timer-color": PLAYER_COLOR_HEX[activePlayerColor],
-    "--timer-progress": `${progress * 360}deg`
+    "--timer-progress": `${progress * 100}%`
   } as CSSProperties;
 
   return (

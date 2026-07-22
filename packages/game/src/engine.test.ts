@@ -461,7 +461,7 @@ describe("movement", () => {
     expect(next.pieces.find((piece) => piece.kind === "elephant-seal")?.facing).toBe("right");
   });
 
-  it("recycles an existing poop when all eight tokens are on the board", () => {
+  it("uses seeded randomness to recycle poop when all eight tokens are on the board", () => {
     const state = createGame("recycle", "quick-2", guests(2), 12);
     state.turn.activePlayerId = "p1";
     state.turn.phase = "moving";
@@ -470,15 +470,14 @@ describe("movement", () => {
     state.turn.elephantSealRelocationsRemaining = 1;
     state.poop = Array.from({ length: 8 }, (_, x) => ({ x, y: 7 }));
     state.poopSupply = 0;
-    const next = placeElephantSealAndPoop(
-      state,
-      "p1",
-      { x: 8, y: 4 },
-      { leavePoop: true, poopFrom: { x: 0, y: 7 } }
-    );
+    const replay = structuredClone(state);
+    const next = placeElephantSealAndPoop(state, "p1", { x: 8, y: 4 }, { leavePoop: true });
+    const replayed = placeElephantSealAndPoop(replay, "p1", { x: 8, y: 4 }, { leavePoop: true });
     expect(next.poop).toHaveLength(8);
-    expect(next.poop).not.toContainEqual({ x: 0, y: 7 });
+    expect(next.poop.filter((poop) => poop.y === 7)).toHaveLength(7);
     expect(next.poop).toContainEqual({ x: 8, y: 4 });
+    expect(replayed.poop).toEqual(next.poop);
+    expect(replayed.seed).toBe(next.seed);
   });
 
   it("does not allow a Fish flyover across the fenced elephant seal", () => {

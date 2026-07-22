@@ -357,12 +357,10 @@ export function GameView({
       if (specialMode === "elephant-seal-only")
         dispatch({ type: "place-elephant-seal", to: position, leavePoop: false });
       if (specialMode === "elephant-seal-poop") {
-        if (state.poopSupply === 0 && !selectedPoop) return;
         dispatch({
           type: "place-elephant-seal",
           to: position,
-          leavePoop: true,
-          poopFrom: selectedPoop
+          leavePoop: true
         });
       }
       if (specialMode === "poop" && selectedPoop)
@@ -376,7 +374,7 @@ export function GameView({
         });
       clearSpecial();
     },
-    [clearSpecial, dispatch, selectedPoop, specialMode, state.poopSupply]
+    [clearSpecial, dispatch, selectedPoop, specialMode]
   );
 
   const moveBoardPiece = useCallback(
@@ -398,9 +396,7 @@ export function GameView({
 
   const instruction =
     specialMode === "elephant-seal-poop"
-      ? state.poopSupply === 0 && !selectedPoop
-        ? "Choose a poop to recycle, then choose the elephant seal destination."
-        : "Choose an open square for the elephant seal."
+      ? "Choose an open square for the elephant seal."
       : specialMode === "elephant-seal-only"
         ? "Choose an open square for the elephant seal."
         : specialMode === "poop"
@@ -493,12 +489,7 @@ export function GameView({
           specialMoves={specialMoves}
           specialSelectableIds={specialSelectableIds}
           onMove={moveBoardPiece}
-          onPoopSelect={
-            isMyTurn &&
-            (specialMode === "poop" || (specialMode === "elephant-seal-poop" && state.poopSupply === 0))
-              ? setSelectedPoop
-              : undefined
-          }
+          onPoopSelect={isMyTurn && specialMode === "poop" ? setSelectedPoop : undefined}
           selectedPoop={selectedPoop}
           interactionError={message}
           onEmptyCell={isMyTurn && specialMode && specialMode !== "opponent" ? chooseEmptyCell : undefined}

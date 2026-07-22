@@ -385,8 +385,7 @@ export class GameRoom extends DurableObject<Env> {
     else if (command.type === "move") next = move(next, actorId, command.move);
     else if (command.type === "place-elephant-seal")
       next = placeElephantSealAndPoop(next, actorId, command.to, {
-        leavePoop: command.leavePoop,
-        poopFrom: command.poopFrom
+        leavePoop: command.leavePoop
       });
     else if (command.type === "play-fish") next = playFish(next, actorId, command.play);
     else if (command.type === "resolve-poop-choice")

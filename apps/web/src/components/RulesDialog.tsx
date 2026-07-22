@@ -139,8 +139,8 @@ export function RulesButton({ className = "" }: { className?: string }) {
                       On a roll of one, choose either a normal move or relocate the elephant seal to any open
                       square, optionally leaving poop underneath it. Before the first relocation, the elephant
                       seal is locked inside its center fence and cannot be moved. If all eight poop tokens are
-                      already out and you choose to poop, select one existing token and recycle it beneath the
-                      elephant seal.
+                      already out and you choose to poop, the game randomly recycles one existing token
+                      beneath the elephant seal.
                     </p>
                   </div>
                   <div>

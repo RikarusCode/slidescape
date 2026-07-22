@@ -189,7 +189,6 @@ export type ClientCommand =
       expectedVersion: number;
       to: Position;
       leavePoop?: boolean;
-      poopFrom?: Position;
     }
   | {
       type: "play-fish";

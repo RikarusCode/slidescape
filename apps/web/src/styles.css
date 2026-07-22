@@ -2702,91 +2702,65 @@ a:focus-visible {
 }
 .turn-timer {
   --timer-color: #2ca8d8;
-  --timer-progress: 360deg;
+  --timer-progress: 100%;
   position: relative;
-  width: 124px;
-  height: 70px;
-  display: grid;
-  place-items: center;
+  width: clamp(9rem, 18vw, 14rem);
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
   justify-self: center;
-  filter: drop-shadow(0 5px 8px rgba(0, 18, 44, 0.25));
+  padding: 0.45rem 0.7rem 0.55rem;
+  overflow: hidden;
+  border: 1px solid rgba(126, 205, 235, 0.65);
+  border-radius: 12px;
+  background: rgba(7, 31, 66, 0.94);
+  box-shadow: 0 3px 9px rgba(0, 18, 44, 0.18);
 }
-.turn-timer::before,
 .turn-timer::after {
   content: "";
   position: absolute;
-  z-index: -1;
-  background: linear-gradient(145deg, #eafaff, #93d7ef);
-  border: 1px solid rgba(255, 255, 255, 0.75);
-}
-.turn-timer::before {
-  inset: 2px 7px;
-  clip-path: polygon(
-    9% 18%,
-    25% 3%,
-    42% 12%,
-    59% 0,
-    78% 13%,
-    94% 8%,
-    100% 50%,
-    88% 91%,
-    68% 85%,
-    51% 100%,
-    33% 88%,
-    12% 96%,
-    0 59%
-  );
-}
-.turn-timer::after {
-  inset: 8px 13px;
-  background: #092a54;
-  border-color: #4bb7de;
-  clip-path: polygon(8% 15%, 92% 8%, 100% 48%, 90% 91%, 12% 94%, 0 55%);
+  bottom: 0;
+  left: 0;
+  width: var(--timer-progress);
+  height: 3px;
+  background: var(--timer-color);
+  transition: width 0.25s linear;
 }
 .turn-timer-ring {
-  width: 64px;
-  height: 64px;
-  display: grid;
-  place-items: center;
-  padding: 4px;
-  border-radius: 50%;
-  background: conic-gradient(var(--timer-color) var(--timer-progress), rgba(119, 190, 220, 0.2) 0);
+  width: 100%;
+  min-width: 0;
 }
 .turn-timer-face {
   width: 100%;
-  height: 100%;
-  display: grid;
-  place-content: center;
-  border-radius: 50%;
-  background: #071f42;
-  text-align: center;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
 }
 .turn-timer-face span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--timer-color);
   font:
-    900 0.55rem/1 "Trebuchet MS",
+    800 0.68rem/1.15 "Trebuchet MS",
     sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.02em;
 }
 .turn-timer-face strong {
-  margin-top: 0.18rem;
+  flex: 0 0 auto;
   color: white;
   font:
-    900 1.08rem/1 "Trebuchet MS",
+    900 1rem/1 "Trebuchet MS",
     sans-serif;
   letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.turn-timer.urgent .turn-timer-ring {
+.turn-timer.urgent {
   --timer-color: #ff7145;
-  animation: timer-pulse 0.8s ease-in-out infinite alternate;
-}
-@keyframes timer-pulse {
-  to {
-    filter: brightness(1.18);
-    transform: scale(1.035);
-  }
+  border-color: rgba(255, 113, 69, 0.72);
 }
 .connection {
   width: 100%;
@@ -3201,21 +3175,12 @@ a:focus-visible {
     font-size: 0.85rem;
   }
   .turn-timer {
-    width: 92px;
-    height: 62px;
-  }
-  .turn-timer::before {
-    inset: 3px 1px;
-  }
-  .turn-timer::after {
-    inset: 9px 6px;
-  }
-  .turn-timer-ring {
-    width: 54px;
-    height: 54px;
+    width: min(10.5rem, 100%);
+    min-height: 40px;
+    padding: 0.38rem 0.55rem 0.48rem;
   }
   .turn-timer-face strong {
-    font-size: 0.92rem;
+    font-size: 0.88rem;
   }
   .connection {
     gap: 0.3rem;

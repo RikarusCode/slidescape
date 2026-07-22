@@ -8,7 +8,7 @@ export const FISH_CARDS: CardDefinition<FishCardId>[] = [
     timing: "your turn",
     choices: [],
     targets: "next penguin move",
-    text: "On one penguin slide, pass over the first penguin, ice block, or unfenced elephant seal when the square immediately beyond it is open. Continue sliding and stop normally before any later obstacle. The slide still costs one move."
+    text: "Pass over the first obstacle, consuming one turn. Cannot pass over multiple adjacent obstacles."
   },
   {
     id: "avoid-or-two",
@@ -35,7 +35,7 @@ export const FISH_CARDS: CardDefinition<FishCardId>[] = [
     timing: "your turn",
     choices: ["Take an opponent's Fish card", "Add two moves"],
     targets: "self or opponent",
-    text: "Return this card, then take a held Fish card from an opponent or add two moves to your current roll."
+    text: "Take a held Fish card from an opponent or add two moves to your current roll."
   },
   {
     id: "move-opponent",
