@@ -44,9 +44,9 @@ const EFFECTS_MAX_GAIN = IS_MOBILE ? 5.0 : 1.7;
 // Slider response curve. An exponent > 1 stretches the usable range: low
 // positions get much quieter and the top end stands out, so each slider feels
 // like it has real extremes instead of bunching everything near the middle.
-const SLIDER_CURVE = 1.8;
+const SLIDER_CURVE = 2.5;
 
-const DEFAULT_SETTINGS: AudioSettings = { music: 0.4, effects: 0.85 };
+const DEFAULT_SETTINGS: AudioSettings = { music: 0.35, effects: 0.85 };
 const clamp = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 const curvedGain = (value: number, ceiling: number) => Math.pow(clamp(value), SLIDER_CURVE) * ceiling;
 const midiFrequency = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
