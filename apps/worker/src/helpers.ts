@@ -26,6 +26,10 @@ export function privateCode(): string {
   return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]!).join("");
 }
 
+export function cleanName(name: unknown): string {
+  return typeof name === "string" ? name.trim().slice(0, 24) || "Penguin Player" : "Penguin Player";
+}
+
 export function cleanIdentity(input: Partial<SessionIdentity>): SessionIdentity {
   const playerId = typeof input.playerId === "string" && input.playerId.length <= 64 ? input.playerId : "";
   const reconnectToken =
@@ -37,8 +41,7 @@ export function cleanIdentity(input: Partial<SessionIdentity>): SessionIdentity 
   return {
     playerId,
     reconnectToken,
-    name:
-      typeof input.name === "string" ? input.name.trim().slice(0, 24) || "Penguin Player" : "Penguin Player"
+    name: cleanName(input.name)
   };
 }
 

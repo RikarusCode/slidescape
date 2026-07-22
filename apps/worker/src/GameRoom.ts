@@ -18,6 +18,7 @@ import {
   type PlayerColor
 } from "@slidescape/game";
 import {
+  cleanName,
   parseWireMessage,
   playerCount,
   publicGameState,
@@ -184,6 +185,19 @@ export class GameRoom extends DurableObject<Env> {
       (candidate) => candidate.playerId === playerId && candidate.reconnectToken === reconnectToken
     );
     if (!room || !member) return new Response("Room session unavailable", { status: 403 });
+
+    // Adopt the name the player currently has, not the one frozen when they
+    // joined the queue -- e.g. someone who queued as the default "Penguin
+    // Player" and then renamed themselves before the match formed should enter
+    // under their new name. The URL only carries a name for the human connect,
+    // so a missing param leaves the existing name untouched (bots, reconnects).
+    if (url.searchParams.has("name") && !member.isBot) {
+      const name = cleanName(url.searchParams.get("name"));
+      member.name = name;
+      room.game?.players.forEach((player) => {
+        if (player.id === member.playerId) player.name = name;
+      });
+    }
 
     const pair = new WebSocketPair();
     const client = pair[0];

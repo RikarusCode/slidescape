@@ -31,6 +31,7 @@ export interface GameSocket {
   timeout(milliseconds: number): {
     emit: (event: string, ...values: unknown[]) => void;
   };
+  setName(name: string): void;
   disconnect(): void;
 }
 
@@ -54,7 +55,7 @@ class SlidescapeSocket implements GameSocket {
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly pending = new Map<string, { callback: ReplyCallback; event: string; timer: number }>();
   private readonly identity: Session;
-  private readonly name: string;
+  private name: string;
   private roomSocket?: WebSocket;
   private queueSocket?: WebSocket;
   private stopped = false;
@@ -88,6 +89,13 @@ class SlidescapeSocket implements GameSocket {
         void this.dispatch(event, values, milliseconds);
       }
     };
+  }
+
+  // Keep the live name in sync with the input field so that whenever the
+  // player next enters a room (match found, private join, reconnect) the server
+  // is told their current name rather than the one captured at construction.
+  setName(name: string): void {
+    this.name = name;
   }
 
   disconnect(): void {
@@ -226,7 +234,8 @@ class SlidescapeSocket implements GameSocket {
     this.roomSocket?.close(1000, "Room replaced");
     const query = new URLSearchParams({
       playerId: this.identity.playerId,
-      reconnectToken: this.identity.reconnectToken
+      reconnectToken: this.identity.reconnectToken,
+      name: this.name
     });
     const socket = new WebSocket(websocketUrl(`/ws/room/${encodeURIComponent(roomId)}?${query}`));
     this.roomSocket = socket;

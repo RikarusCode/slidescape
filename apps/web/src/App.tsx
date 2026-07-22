@@ -99,6 +99,14 @@ export function App() {
       socketRef.current = undefined;
     };
   }, []);
+
+  // Keep the live socket + persisted name in step with the input, so a name
+  // changed after queuing (or between games) is the one carried into the match.
+  useEffect(() => {
+    const resolved = name.trim() || "Penguin Player";
+    socketRef.current?.setName(resolved);
+    localStorage.setItem("slidescape-name", resolved);
+  }, [name]);
   const emitWithReply = (event: string, payload: unknown, handleReply: (reply: ActionReply) => void) => {
     const socket = ensureSocket();
     setMessage(undefined);

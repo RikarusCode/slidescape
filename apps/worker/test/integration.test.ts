@@ -89,7 +89,8 @@ class TestSocket {
 async function roomSocket(roomId: string, player: SessionIdentity): Promise<TestSocket> {
   const query = new URLSearchParams({
     playerId: player.playerId,
-    reconnectToken: player.reconnectToken
+    reconnectToken: player.reconnectToken,
+    name: player.name
   });
   const response = await env.GAME_ROOMS.getByName(roomId).fetch(
     new Request(`https://slidescape.test/room?${query}`, {
@@ -186,6 +187,26 @@ describe("Matchmaker", () => {
         firstPlayer.playerId,
         secondPlayer.playerId
       ]);
+    });
+  });
+
+  it("enters a matched game under the player's current name, not the name they queued with", async () => {
+    const firstPlayer = identity("Penguin Player"); // queued as the default placeholder
+    const secondPlayer = identity("Second");
+    const first = await queueSocket("quick-2", firstPlayer);
+    const firstMatch = first.next<{ roomId: string }>("matched");
+    const second = await queueSocket("quick-2", secondPlayer);
+    const [matchOne] = await Promise.all([firstMatch, second.next<{ roomId: string }>("matched")]);
+
+    // The player renamed themselves after queuing; the room connection carries
+    // the new name and it should replace the queued one.
+    const renamedSocket = await roomSocket(matchOne.roomId, { ...firstPlayer, name: "Aurora" });
+    await renamedSocket.next("session");
+
+    await runInDurableObject(env.GAME_ROOMS.getByName(matchOne.roomId), async (_instance, state) => {
+      const room = await state.storage.get<RoomSnapshot>("room");
+      const member = room?.members.find((candidate) => candidate.playerId === firstPlayer.playerId);
+      expect(member?.name).toBe("Aurora");
     });
   });
 });
