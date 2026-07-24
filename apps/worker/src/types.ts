@@ -1,11 +1,4 @@
-import type {
-  BotActionKind,
-  GameMode,
-  GameState,
-  LegalMove,
-  LobbySettings,
-  PlayerColor
-} from "@slidescape/game";
+import type { GameMode, GameState, LegalMove, LobbySettings, PlayerColor } from "@slidescape/game";
 
 export interface SessionIdentity {
   playerId: string;
@@ -46,30 +39,21 @@ export interface RoomSnapshot {
   game?: GameState;
   processed: string[];
   disconnectDeadlines: Record<string, number>;
-  botActionAt?: number;
   /**
-   * Anytime iterative-deepening search spread across alarm ticks. While set, the
-   * bot is refining its next action: each tick deepens the search one level
-   * until the wall-clock budget is nearly spent (or it can't usefully go
-   * deeper), then commits `best` -- but never before `floor` (the minimum
-   * visible pause). `forVersion` guards against applying it if some other event
-   * (a forfeit, etc.) mutated `game` in the meantime.
+   * When the bot next acts. It's purely a pacing timer: the action is computed
+   * when the alarm fires, not cached here, so the search time adds to the pause
+   * rather than eating it. Whenever it's a bot's turn this must be a future time
+   * (see GameRoom.ensureBotScheduled) or the room would appear frozen.
    */
-  botThinking?: BotThinking;
+  botActionAt?: number;
   /**
    * The bot's carried-forward principal variation within the current turn -- the
    * remaining planned moves after the last committed one. Seeds each subsequent
-   * move's search so a shorter, time-boxed re-search can't "forget" the plan
-   * that justified an earlier move. Cleared when the turn or actor changes.
+   * move's search so a shorter re-search can't "forget" the plan that justified
+   * an earlier move. Cleared when the turn or actor changes.
    */
   botPlan?: LegalMove[];
   expiresAt: number;
-}
-
-export interface BotThinking {
-  forVersion: number;
-  best: { state: GameState; kind: BotActionKind; plan?: LegalMove[] };
-  depth: number; // deepest search level the eager precompute reached (info/monitoring).
 }
 
 export interface QueueEntry extends SessionIdentity {

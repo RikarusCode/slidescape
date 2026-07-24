@@ -449,7 +449,6 @@ describe("GameRoom matches", () => {
         snapshot.game!.turn.rolled = 6;
         snapshot.game!.turn.movesRemaining = 6;
         delete snapshot.botActionAt;
-        delete snapshot.botThinking;
         delete snapshot.botPlan;
         await state.storage.put("room", snapshot);
       });
@@ -457,40 +456,38 @@ describe("GameRoom matches", () => {
       const client = await roomSocket(roomId, human);
       await client.next<GameState>("game-state");
 
-      let maxDepthSeen = 0;
+      let sawMove = false;
       let terminated = false;
 
       for (let tick = 0; tick < 80; tick += 1) {
-        const stop = await runInDurableObject(room, async (_instance, state) => {
+        const before = await runInDurableObject(room, async (_instance, state) => {
           const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
-          if (!snapshot.game || snapshot.game.turn.activePlayerId !== botId) return true;
-          // The search deepens synchronously when the action is scheduled; the
-          // reached depth is recorded on botThinking. Skip the real-time pause so
-          // the test doesn't idle for seconds: fire the pacing alarm immediately.
-          if (snapshot.botThinking) maxDepthSeen = Math.max(maxDepthSeen, snapshot.botThinking.depth);
+          if (!snapshot.game || snapshot.game.turn.activePlayerId !== botId) return undefined;
+          // Skip the real-time pause so the test doesn't idle for seconds: fire
+          // the pacing alarm immediately.
           snapshot.botActionAt = Date.now() - 1;
           await state.storage.put("room", snapshot);
-          return false;
+          return { version: snapshot.game.version, moves: snapshot.game.turn.movesRemaining };
         });
-        if (stop) {
+        if (!before) {
           terminated = true;
           break;
         }
-        const beforeVersion = await runInDurableObject(room, async (_instance, state) => {
-          return (await state.storage.get<RoomSnapshot>("room"))!.game!.version;
-        });
         await runDurableObjectAlarm(room);
         await runInDurableObject(room, async (_instance, state) => {
           const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
-          // Each fired alarm commits exactly one engine transition (no separate
-          // deepening ticks) -- never a skip, never a regression, never a stall.
-          const delta = snapshot.game!.version - beforeVersion;
+          // Each fired alarm commits exactly one engine transition -- never a
+          // skip, never a regression, never a stall.
+          const delta = snapshot.game!.version - before.version;
           expect(delta === 0 || delta === 1).toBe(true);
+          // A drop in movesRemaining means the bot actually made a move (rather
+          // than skipping its turn straight to end-turn).
+          if (snapshot.game!.turn.movesRemaining < before.moves) sawMove = true;
         });
       }
 
       expect(terminated).toBe(true); // the turn ended rather than freezing.
-      expect(maxDepthSeen).toBeGreaterThan(1); // the search actually deepened.
+      expect(sawMove).toBe(true); // the bot made real moves; it didn't skip its turn.
 
       await runInDurableObject(room, async (_instance, state) => {
         const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
@@ -522,7 +519,6 @@ describe("GameRoom matches", () => {
       snapshot.game!.turn.movesRemaining = 0;
       delete snapshot.game!.turn.rolled;
       delete snapshot.botActionAt;
-      delete snapshot.botThinking;
       delete snapshot.botPlan;
       await state.storage.put("room", snapshot);
     });
@@ -570,9 +566,9 @@ describe("GameRoom matches", () => {
     expect(sawMove).toBe(true); // ...and made at least one move (didn't freeze after the roll).
   }, 30_000);
 
-  // A game frozen by an older build persists with a stale/overdue botActionAt and
-  // no (or foreign-shaped) botThinking. Reconnecting to it must self-heal -- arm
-  // a fresh future alarm and resume -- not show a permanently stuck board.
+  // A game frozen by an older build persists with a stale/overdue botActionAt.
+  // Reconnecting to it must self-heal -- arm a fresh future alarm and resume --
+  // not show a permanently stuck board.
   it("recovers a bot turn stranded with a stale botActionAt when a client reconnects", async () => {
     const human = identity("Human");
     const roomId = crypto.randomUUID();
@@ -587,17 +583,15 @@ describe("GameRoom matches", () => {
       snapshot.game!.turn.rolled = 3;
       snapshot.game!.turn.movesRemaining = 3;
       snapshot.botActionAt = Date.now() - 60_000; // overdue -- the frozen signature.
-      delete snapshot.botThinking;
       await state.storage.put("room", snapshot);
     });
 
-    // Reconnecting must re-arm the bot (future alarm + fresh thinking).
+    // Reconnecting must re-arm the bot with a fresh future pacing alarm.
     const client = await roomSocket(roomId, human);
     await client.next<GameState>("game-state");
     await runInDurableObject(room, async (_instance, state) => {
       const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
       expect(snapshot.botActionAt).toBeGreaterThan(Date.now());
-      expect(snapshot.botThinking?.forVersion).toBe(snapshot.game!.version);
     });
 
     // ...and the turn then completes rather than staying frozen.
@@ -617,5 +611,40 @@ describe("GameRoom matches", () => {
       await runDurableObjectAlarm(room);
     }
     expect(terminated).toBe(true);
+  }, 30_000);
+
+  // Requirement: the bot always pauses at least ~1s after rolling before its
+  // first move (the pause is a timer set when the roll commits; the move's
+  // search runs later, on top of it, so it can never shorten the pause).
+  it("waits at least a second after rolling before the first move", async () => {
+    const human = identity("Human");
+    const roomId = crypto.randomUUID();
+    const room = env.GAME_ROOMS.getByName(roomId);
+    const initialized = await room.initializeBot(roomId, "quick-2", human);
+    const botId = initialized.lobby.members.find((member) => member.isBot)!.id;
+
+    await roomSocket(roomId, human);
+    // Bot at the start of its turn with a due alarm, so firing it commits a roll.
+    // Set this AFTER connecting -- connect re-arms botActionAt to a future time.
+    await runInDurableObject(room, async (_instance, state) => {
+      const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+      snapshot.game!.turn.activePlayerId = botId;
+      snapshot.game!.turn.phase = "awaiting-roll";
+      snapshot.game!.turn.movesRemaining = 0;
+      delete snapshot.game!.turn.rolled;
+      snapshot.botActionAt = Date.now() - 1;
+      await state.storage.put("room", snapshot);
+    });
+
+    const t0 = Date.now();
+    await runDurableObjectAlarm(room); // commits the roll and schedules the first move
+
+    await runInDurableObject(room, async (_instance, state) => {
+      const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+      expect(snapshot.game!.turn.phase).toBe("moving"); // it rolled
+      expect(snapshot.game!.turn.movesRemaining).toBeGreaterThan(0);
+      // The first move is scheduled at least a full second out (floor = 1000ms).
+      expect(snapshot.botActionAt! - t0).toBeGreaterThanOrEqual(1_000);
+    });
   }, 30_000);
 });
