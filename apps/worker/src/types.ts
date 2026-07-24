@@ -1,4 +1,11 @@
-import type { BotActionKind, GameMode, GameState, LegalMove, LobbySettings, PlayerColor } from "@slidescape/game";
+import type {
+  BotActionKind,
+  GameMode,
+  GameState,
+  LegalMove,
+  LobbySettings,
+  PlayerColor
+} from "@slidescape/game";
 
 export interface SessionIdentity {
   playerId: string;

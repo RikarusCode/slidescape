@@ -527,8 +527,7 @@ const OPENING_TOP_K = 5; // pick uniformly among this many best candidates.
 // rank (roughly half a "scoring-ready" penguin).
 const OPENING_MAX_SACRIFICE = 200;
 
-const inOpening = (state: GameState): boolean =>
-  state.turn.number <= OPENING_TURNS * state.turnOrder.length;
+const inOpening = (state: GameState): boolean => state.turn.number <= OPENING_TURNS * state.turnOrder.length;
 
 // Flat beam of 4. A 595-game quick-2 self-play A/B (see scripts/bot-arena.mjs)
 // ranked flat-4 above 5, 6, and the former adaptive 6/5/4 policy, significantly

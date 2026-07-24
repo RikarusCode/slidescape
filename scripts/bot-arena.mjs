@@ -234,7 +234,9 @@ function main() {
     h2h: Object.fromEntries(configs.map((a) => [a.name, Object.fromEntries(h2h.get(a.name))]))
   };
 
-  console.log(`\n[${label}] DONE preset=${preset} modes=${modes.join(",")} games=${gamesPlayed} in ${elapsed}s`);
+  console.log(
+    `\n[${label}] DONE preset=${preset} modes=${modes.join(",")} games=${gamesPlayed} in ${elapsed}s`
+  );
   console.log("Config          Games   Win%   Draw%   AvgMove(ms)  MaxMove(ms)");
   for (const c of result.configs) {
     const winPct = c.games ? ((c.wins / c.games) * 100).toFixed(1) : "0";

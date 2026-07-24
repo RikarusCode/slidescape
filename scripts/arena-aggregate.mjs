@@ -67,9 +67,7 @@ for (const file of files) {
 for (const [key, g] of groups) {
   console.log(`\n==================== ${key} ====================`);
   console.log(`workers=${g.workers}  total games=${g.games}`);
-  console.log(
-    "Config        Games   W    L    D    Win%   Decisive%   95% CI (decisive)   AvgMove  MaxMove"
-  );
+  console.log("Config        Games   W    L    D    Win%   Decisive%   95% CI (decisive)   AvgMove  MaxMove");
   const names = [...g.configs.keys()];
   for (const name of names) {
     const c = g.configs.get(name);

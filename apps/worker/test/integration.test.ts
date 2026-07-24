@@ -501,4 +501,121 @@ describe("GameRoom matches", () => {
       });
     }, 30_000);
   }
+
+  // Natural flow: the bot starts its turn at awaiting-roll and must progress
+  // roll -> move(s) -> end-turn on its own. This exercises the roll->first-move
+  // transition that the injection test above skips -- the exact spot the field
+  // freeze report ("rolls, then never moves") points at.
+  it("drives a natural bot turn from awaiting-roll through to end-turn without freezing", async () => {
+    const human = identity("Human");
+    const roomId = crypto.randomUUID();
+    const room = env.GAME_ROOMS.getByName(roomId);
+    const initialized = await room.initializeBot(roomId, "quick-2", human);
+    const bot = initialized.lobby.members.find((member) => member.isBot)!;
+    const botId = bot.id;
+
+    // Force the bot to be the active player at the start of a turn (awaiting-roll).
+    await runInDurableObject(room, async (_instance, state) => {
+      const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+      snapshot.game!.turn.activePlayerId = botId;
+      snapshot.game!.turn.phase = "awaiting-roll";
+      snapshot.game!.turn.movesRemaining = 0;
+      delete snapshot.game!.turn.rolled;
+      delete snapshot.botActionAt;
+      delete snapshot.botThinking;
+      delete snapshot.botPlan;
+      await state.storage.put("room", snapshot);
+    });
+
+    const client = await roomSocket(roomId, human);
+    await client.next<GameState>("game-state");
+
+    const kinds: string[] = [];
+    let sawRoll = false;
+    let sawMove = false;
+    let terminated = false;
+
+    for (let tick = 0; tick < 80; tick += 1) {
+      const stop = await runInDurableObject(room, async (_instance, state) => {
+        const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+        if (!snapshot.game || snapshot.game.turn.activePlayerId !== botId) return true;
+        // There must ALWAYS be a scheduled action while it's the bot's turn --
+        // a missing botActionAt here is exactly the freeze we're guarding against.
+        expect(typeof snapshot.botActionAt).toBe("number");
+        snapshot.botActionAt = Date.now() - 1;
+        await state.storage.put("room", snapshot);
+        return false;
+      });
+      if (stop) {
+        terminated = true;
+        break;
+      }
+      const before = await runInDurableObject(room, async (_instance, state) => {
+        const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+        return { version: snapshot.game!.version, phase: snapshot.game!.turn.phase };
+      });
+      await runDurableObjectAlarm(room);
+      await runInDurableObject(room, async (_instance, state) => {
+        const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+        if (snapshot.game!.version > before.version) {
+          if (before.phase === "awaiting-roll") sawRoll = true;
+          if (snapshot.game!.turn.phase === "moving" && before.phase === "moving") sawMove = true;
+          kinds.push(snapshot.game!.turn.phase);
+        }
+      });
+    }
+
+    expect(terminated).toBe(true); // the bot's turn ended; control left the bot.
+    expect(sawRoll).toBe(true); // it actually rolled...
+    expect(sawMove).toBe(true); // ...and made at least one move (didn't freeze after the roll).
+  }, 30_000);
+
+  // A game frozen by an older build persists with a stale/overdue botActionAt and
+  // no (or foreign-shaped) botThinking. Reconnecting to it must self-heal -- arm
+  // a fresh future alarm and resume -- not show a permanently stuck board.
+  it("recovers a bot turn stranded with a stale botActionAt when a client reconnects", async () => {
+    const human = identity("Human");
+    const roomId = crypto.randomUUID();
+    const room = env.GAME_ROOMS.getByName(roomId);
+    const initialized = await room.initializeBot(roomId, "quick-2", human);
+    const botId = initialized.lobby.members.find((member) => member.isBot)!.id;
+
+    await runInDurableObject(room, async (_instance, state) => {
+      const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+      snapshot.game!.turn.activePlayerId = botId;
+      snapshot.game!.turn.phase = "moving";
+      snapshot.game!.turn.rolled = 3;
+      snapshot.game!.turn.movesRemaining = 3;
+      snapshot.botActionAt = Date.now() - 60_000; // overdue -- the frozen signature.
+      delete snapshot.botThinking;
+      await state.storage.put("room", snapshot);
+    });
+
+    // Reconnecting must re-arm the bot (future alarm + fresh thinking).
+    const client = await roomSocket(roomId, human);
+    await client.next<GameState>("game-state");
+    await runInDurableObject(room, async (_instance, state) => {
+      const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+      expect(snapshot.botActionAt).toBeGreaterThan(Date.now());
+      expect(snapshot.botThinking?.forVersion).toBe(snapshot.game!.version);
+    });
+
+    // ...and the turn then completes rather than staying frozen.
+    let terminated = false;
+    for (let tick = 0; tick < 40; tick += 1) {
+      const stop = await runInDurableObject(room, async (_instance, state) => {
+        const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+        if (!snapshot.game || snapshot.game.turn.activePlayerId !== botId) return true;
+        snapshot.botActionAt = Date.now() - 1;
+        await state.storage.put("room", snapshot);
+        return false;
+      });
+      if (stop) {
+        terminated = true;
+        break;
+      }
+      await runDurableObjectAlarm(room);
+    }
+    expect(terminated).toBe(true);
+  }, 30_000);
 });
