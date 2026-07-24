@@ -530,15 +530,16 @@ const OPENING_MAX_SACRIFICE = 200;
 const inOpening = (state: GameState): boolean =>
   state.turn.number <= OPENING_TURNS * state.turnOrder.length;
 
-// Beam floor is 4: the anytime driver bounds cost by wall-clock (it stops
-// deepening before a level would overrun the budget), so wide turns no longer
-// need to collapse to greedy -- keeping >=4 candidates avoids pruning the best
-// multi-move setup at the root, which is where narrow beams lose the most.
+// Flat beam of 4. A 595-game quick-2 self-play A/B (see scripts/bot-arena.mjs)
+// ranked flat-4 above 5, 6, and the former adaptive 6/5/4 policy, significantly
+// so over 6 and adaptive: with the fixed eval budget a wider beam spends it on
+// shallow siblings instead of refining the top moves deeper, and in the anytime
+// driver a narrower beam makes each level cheaper so it reaches greater depth
+// within the compute cap. Kept as a function (not a const) so BEAM_OVERRIDE and
+// future width tuning stay a one-line change.
 let BEAM_OVERRIDE = 0; // >0 forces a flat beam (self-play tuning only).
-function beamWidthFor(branching: number): number {
+function beamWidthFor(_branching: number): number {
   if (BEAM_OVERRIDE > 0) return BEAM_OVERRIDE;
-  if (branching <= 8) return 6;
-  if (branching <= 16) return 5;
   return 4;
 }
 
