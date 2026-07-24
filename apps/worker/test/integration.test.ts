@@ -427,4 +427,78 @@ describe("GameRoom matches", () => {
       expect(snapshot.game!.log.some((entry) => entry.startsWith(`${bot.name} rolled`))).toBe(true);
     });
   });
+
+  // Run the full anytime-turn drive for every mode: the larger boards
+  // (strategic-2, classic-4) have far more pieces and deeper branching, so this
+  // guards against a mode-specific driver freeze, not just quick-2.
+  for (const mode of ["quick-2", "strategic-2", "classic-4"] as const) {
+    it(`drives a full anytime bot turn (${mode}): commits one legal action per tick, never freezes`, async () => {
+      const human = identity("Human");
+      const roomId = crypto.randomUUID();
+      const room = env.GAME_ROOMS.getByName(roomId);
+      const initialized = await room.initializeBot(roomId, mode, human);
+      const bot = initialized.lobby.members.find((member) => member.isBot)!;
+      const botId = bot.id;
+
+      // Drop the bot straight into a full 6-move "moving" phase (the roll that
+      // froze in the field) so deepening is guaranteed and the turn is long.
+      await runInDurableObject(room, async (_instance, state) => {
+        const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+        snapshot.game!.turn.activePlayerId = botId;
+        snapshot.game!.turn.phase = "moving";
+        snapshot.game!.turn.rolled = 6;
+        snapshot.game!.turn.movesRemaining = 6;
+        delete snapshot.botActionAt;
+        delete snapshot.botThinking;
+        delete snapshot.botPlan;
+        await state.storage.put("room", snapshot);
+      });
+
+      const client = await roomSocket(roomId, human);
+      await client.next<GameState>("game-state");
+
+      let maxDepthSeen = 0;
+      let terminated = false;
+
+      for (let tick = 0; tick < 80; tick += 1) {
+        const stop = await runInDurableObject(room, async (_instance, state) => {
+          const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+          if (!snapshot.game || snapshot.game.turn.activePlayerId !== botId) return true;
+          // The search deepens synchronously when the action is scheduled; the
+          // reached depth is recorded on botThinking. Skip the real-time pause so
+          // the test doesn't idle for seconds: fire the pacing alarm immediately.
+          if (snapshot.botThinking) maxDepthSeen = Math.max(maxDepthSeen, snapshot.botThinking.depth);
+          snapshot.botActionAt = Date.now() - 1;
+          await state.storage.put("room", snapshot);
+          return false;
+        });
+        if (stop) {
+          terminated = true;
+          break;
+        }
+        const beforeVersion = await runInDurableObject(room, async (_instance, state) => {
+          return (await state.storage.get<RoomSnapshot>("room"))!.game!.version;
+        });
+        await runDurableObjectAlarm(room);
+        await runInDurableObject(room, async (_instance, state) => {
+          const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+          // Each fired alarm commits exactly one engine transition (no separate
+          // deepening ticks) -- never a skip, never a regression, never a stall.
+          const delta = snapshot.game!.version - beforeVersion;
+          expect(delta === 0 || delta === 1).toBe(true);
+        });
+      }
+
+      expect(terminated).toBe(true); // the turn ended rather than freezing.
+      expect(maxDepthSeen).toBeGreaterThan(1); // the search actually deepened.
+
+      await runInDurableObject(room, async (_instance, state) => {
+        const snapshot = (await state.storage.get<RoomSnapshot>("room"))!;
+        // Multiple commits landed (several moves plus the end-turn), and control
+        // left the bot rather than freezing mid-turn.
+        expect(snapshot.game!.version).toBeGreaterThan(initialized.game.version + 1);
+        expect(snapshot.game!.turn.activePlayerId).not.toBe(botId);
+      });
+    }, 30_000);
+  }
 });

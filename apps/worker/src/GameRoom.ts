@@ -12,6 +12,7 @@ import {
   playFish,
   resolvePoopChoice,
   roll,
+  type BotActionKind,
   type ClientCommand,
   type GameMode,
   type LobbySettings,
@@ -34,9 +35,25 @@ import type { ActionReply, PublicLobby, RoomMember, RoomSnapshot, SessionIdentit
 interface SocketAttachment {
   memberId: string;
 }
-const BOT_ACTION_DELAY_MS = 750;
-const BOT_ROLL_DELAY_MS = 1_000;
+// Move pacing = the visible pause before a bot move, drawn uniformly in
+// [floor, budget]. The bot's search (iterative deepening) runs eagerly and
+// synchronously when the move is scheduled, then the result is just held until
+// the pause elapses -- so calculation hides inside the pause rather than adding
+// to it. First move of a turn gets the big window; each later move (shorter
+// remaining horizon, so cheaper) gets the small one.
+const FIRST_MOVE_FLOOR_MS = 1_000;
+const FIRST_MOVE_BUDGET_MS = 3_000;
+const LATER_MOVE_FLOOR_MS = 750;
+const LATER_MOVE_BUDGET_MS = 1_000;
+// Roll / card / choice / end-turn are instant decisions -- a short, snappy pause.
+const BOT_STEP_DELAY_MS = 450;
 const BOT_OPENING_DELAY_MS = 1_100;
+// Hard cap on how long the synchronous deepening may block the room's isolate.
+// The search deepens until the next level is predicted to exceed this (or it
+// runs out of useful depth); the pause still runs the full drawn duration.
+const MAX_COMPUTE_MS = 1_500;
+// Predicted next-level cost = last level x this; stop deepening if it won't fit.
+const DEEPEN_GROWTH = 3;
 const BOT_NAMES = [
   "Polar Bot",
   "Frost Bot",
@@ -212,7 +229,7 @@ export class GameRoom extends DurableObject<Env> {
       if (player.id === member.playerId) player.connected = true;
     });
     room.expiresAt = Date.now() + ROOM_TTL_MS;
-    if (room.game && !room.botActionAt) this.scheduleBotAction(room, BOT_OPENING_DELAY_MS);
+    if (room.game && !room.botActionAt) this.scheduleBotAction(room, "opening");
     await this.save(room);
     const lobby = this.publicLobby(room);
     sendEvent(server, "session", {
@@ -330,7 +347,7 @@ export class GameRoom extends DurableObject<Env> {
           })),
           randomSeed()
         );
-        this.scheduleBotAction(room, BOT_OPENING_DELAY_MS);
+        this.scheduleBotAction(room, "opening");
         this.resetTurnDeadline(room);
       }
       await this.save(room);
@@ -418,61 +435,153 @@ export class GameRoom extends DurableObject<Env> {
     );
   }
 
-  // The bot's move is computed as soon as it becomes its turn (advanceBotAction
-  // is a pure function of the game state, so there's no harm running it early)
-  // and then just held until `botActionAt`. That way the visible pause before a
-  // bot acts is max(pacingDelay, calculationTime) instead of the two stacking:
-  // a slow calculation eats into the pacing delay rather than adding to it, and
-  // a fast one still waits out the remaining delay for a natural cadence.
-  private scheduleBotAction(room: RoomSnapshot, delay = BOT_ACTION_DELAY_MS): void {
+  // Arm the bot from outside the alarm loop (connect / command / commit / forced
+  // completion). Swallows a precompute failure into a short retry so it can never
+  // fail its caller; the alarm loop then escalates a persistent failure to a
+  // forced turn completion (see advanceScheduledBot), so the room can't freeze.
+  private scheduleBotAction(room: RoomSnapshot, prev?: BotActionKind | "opening"): void {
+    try {
+      this.beginThinking(room, prev);
+    } catch {
+      room.botActionAt = Date.now() + BOT_STEP_DELAY_MS;
+    }
+  }
+
+  // Compute the bot's next action now and hold it until a single pacing alarm.
+  // Instant actions (roll / card / choice / end-turn) take a short fixed pause.
+  // A move runs iterative deepening SYNCHRONOUSLY here -- one deepening loop, not
+  // a chain of self-rescheduling alarms (which the DO runtime cancels, freezing
+  // the bot) -- bounded by MAX_COMPUTE_MS so it can't block the isolate for long,
+  // then holds the result until the drawn pause elapses. `prev` is the action
+  // that led here: after a roll the next move is the first of the turn (big
+  // window); "opening" is the game's very first action. May throw if the state
+  // is genuinely broken -- callers decide whether to swallow (scheduleBotAction)
+  // or escalate to a forced completion (advanceScheduledBot).
+  private beginThinking(room: RoomSnapshot, prev?: BotActionKind | "opening"): void {
     if (!this.activeMemberIsBot(room) || room.game?.status !== "playing") {
       delete room.botActionAt;
-      delete room.pendingBotResult;
+      delete room.botThinking;
+      delete room.botPlan;
       return;
     }
-    if (room.botActionAt !== undefined) return;
+    if (room.botActionAt !== undefined) return; // already scheduled/thinking.
     const game = room.game;
-    const startedAt = Date.now();
-    let result;
-    try {
-      result = advanceBotAction(game, game.turn.activePlayerId);
-    } catch {
-      // A bot decision must never be able to freeze a room. If precomputing
-      // fails, skip the cached result and let the alarm fire; advanceScheduledBot
-      // recomputes and, if that also fails, force-completes the turn.
-      room.botActionAt = Date.now() + delay;
+    const actor = game.turn.activePlayerId;
+    const start = Date.now();
+    // Depth-1 first, so we always have a legal action even if deepening bails.
+    let best = advanceBotAction(game, actor, { maxDepth: 1, plan: room.botPlan });
+
+    if (best.kind !== "move") {
+      const delay = prev === "opening" ? BOT_OPENING_DELAY_MS : BOT_STEP_DELAY_MS;
+      room.botThinking = {
+        forVersion: game.version,
+        best: { state: best.state, kind: best.kind, plan: best.plan },
+        depth: 1
+      };
+      room.botActionAt = start + delay;
       return;
     }
-    const elapsed = Date.now() - startedAt;
-    room.pendingBotResult = { forVersion: game.version, state: result.state, kind: result.kind };
-    room.botActionAt = Date.now() + Math.max(0, delay - elapsed);
+
+    // Iterative deepening, synchronous and self-bounded: deepen while the next
+    // level is predicted to finish within the compute cap and there is depth
+    // left to find (own moves this turn). Keep the deepest completed result.
+    const firstMove = prev === "roll";
+    const floorMs = firstMove ? FIRST_MOVE_FLOOR_MS : LATER_MOVE_FLOOR_MS;
+    const budgetMs = firstMove ? FIRST_MOVE_BUDGET_MS : LATER_MOVE_BUDGET_MS;
+    const maxUsefulDepth = Math.max(1, game.turn.movesRemaining);
+    const computeDeadline = start + Math.min(budgetMs, MAX_COMPUTE_MS);
+    let depth = 1;
+    let lastLevelMs = Date.now() - start;
+    while (depth < maxUsefulDepth) {
+      if (Date.now() + lastLevelMs * DEEPEN_GROWTH > computeDeadline) break;
+      const levelStart = Date.now();
+      let deeper;
+      try {
+        deeper = advanceBotAction(game, actor, { maxDepth: depth + 1, plan: room.botPlan });
+      } catch {
+        break; // keep the best complete level we already have.
+      }
+      lastLevelMs = Date.now() - levelStart;
+      depth += 1;
+      if (deeper.kind === "move") best = deeper;
+    }
+
+    // Draw the visible pause in [floor, budget]; never commit sooner than the
+    // compute actually took (so a slow search still shows a natural pause).
+    const elapsed = Date.now() - start;
+    const pause = floorMs + Math.random() * (budgetMs - floorMs);
+    room.botThinking = {
+      forVersion: game.version,
+      best: { state: best.state, kind: best.kind, plan: best.plan },
+      depth
+    };
+    room.botActionAt = start + Math.max(pause, elapsed);
   }
 
   private async advanceScheduledBot(room: RoomSnapshot): Promise<void> {
-    const game = room.game;
-    const pending = room.pendingBotResult;
-    delete room.botActionAt;
-    delete room.pendingBotResult;
-    if (!game || game.status !== "playing" || !this.activeMemberIsBot(room)) return;
-    let result: { state: typeof game; kind: string };
     try {
-      result =
-        pending && pending.forVersion === game.version
-          ? { state: pending.state, kind: pending.kind }
-          : advanceBotAction(game, game.turn.activePlayerId);
+      this.stepScheduledBot(room);
     } catch {
-      // Last-resort guard: if the bot cannot produce an action, force the turn
-      // to complete with simple legal moves rather than leaving the room frozen.
-      await this.completeTimedTurn(room);
+      // Absolute backstop: if anything at all goes wrong advancing the bot --
+      // a broken precompute, or even committing an already-computed move --
+      // force the turn to complete with simple legal moves rather than leaving
+      // the room frozen. This must never be reachable in practice; it exists so
+      // that a bot decision can never strand a game with no path forward.
+      try {
+        delete room.botThinking;
+        delete room.botPlan;
+        await this.completeTimedTurn(room);
+      } catch {
+        // Even forced completion failed (should be impossible). Keep a future
+        // alarm armed so the room keeps trying rather than freezing outright.
+        if (room.game?.status === "playing" && this.activeMemberIsBot(room)) {
+          room.botActionAt = Date.now() + BOT_STEP_DELAY_MS;
+        }
+      }
+    }
+  }
+
+  private stepScheduledBot(room: RoomSnapshot): void {
+    const game = room.game;
+    const thinking = room.botThinking;
+    delete room.botActionAt;
+    if (!game || game.status !== "playing" || !this.activeMemberIsBot(room)) {
+      delete room.botThinking;
+      delete room.botPlan;
       return;
     }
-    room.game = result.state;
-    this.scheduleBotAction(room, result.kind === "roll" ? BOT_ROLL_DELAY_MS : BOT_ACTION_DELAY_MS);
+    if (!thinking || thinking.forVersion !== game.version) {
+      // No plan, or the game moved on under us: recompute from scratch. Use the
+      // throwing beginThinking (not the swallowing scheduleBotAction) so a
+      // genuinely broken state escalates to the completeTimedTurn backstop
+      // rather than silently retrying forever.
+      delete room.botThinking;
+      this.beginThinking(room);
+      return;
+    }
+    // The alarm fired at the scheduled pause time (botActionAt): apply the held
+    // action. Timing lives entirely in botActionAt, so there's nothing to re-gate.
+    this.commitBotAction(room, thinking.best);
+  }
+
+  // Apply the chosen action and schedule the next one. Carries the principal
+  // variation forward across moves within a turn (so the next move's search is
+  // anchored to it) and clears it whenever the action isn't a move.
+  private commitBotAction(room: RoomSnapshot, best: NonNullable<RoomSnapshot["botThinking"]>["best"]): void {
+    delete room.botThinking;
+    room.game = best.state;
+    if (best.kind === "move") room.botPlan = best.plan;
+    else delete room.botPlan;
+    this.scheduleBotAction(room, best.kind);
   }
 
   private async completeTimedTurn(room: RoomSnapshot): Promise<void> {
     let state = room.game;
     if (!state || state.status !== "playing") return;
+    // Force-completion invalidates any in-progress search and carried plan.
+    delete room.botThinking;
+    delete room.botActionAt;
+    delete room.botPlan;
     const actor = state.turn.activePlayerId;
     let guard = 96;
     if (state.turn.pendingFishChoice) {

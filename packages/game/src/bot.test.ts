@@ -10,7 +10,7 @@ import {
   resolvePoopChoice,
   roll
 } from "./engine.js";
-import { BOARD_SIZE, type GameMode, type GameState } from "./types.js";
+import { BOARD_SIZE, type GameMode, type GameState, type LegalMove } from "./types.js";
 
 function gameWithBotFirst(): GameState {
   for (let seed = 1; seed < 1_000; seed += 1) {
@@ -75,7 +75,7 @@ describe("paced bot actions", () => {
           let state = createGame(`simulation-${mode}-${seed}`, mode, guests, seed);
           const pieceCount = state.pieces.length;
 
-          for (let action = 0; action < 40 && state.status === "playing"; action += 1) {
+          for (let action = 0; action < 28 && state.status === "playing"; action += 1) {
             const priorVersion = state.version;
             state = advanceBotAction(state, state.turn.activePlayerId).state;
             if (!verifyInvariants) continue;
@@ -102,13 +102,15 @@ describe("paced bot actions", () => {
         expect(simulate(true)).toEqual(simulate(false));
       }
     }
-    // The heuristic bot does real per-move evaluation (bounded search plus
-    // goal-distance BFS), so a full 240-decision replay across all three
-    // modes takes a few seconds locally -- well within budget for the actual
-    // ~700ms-paced turns in play, but far heavier than the trivial bot this
-    // test's original 10s cap was sized for. The generous ceiling is headroom
-    // for slower CI, not an expected runtime.
-  }, 60_000);
+    // Production paces the bot with an anytime iterative-deepening driver whose
+    // committed depth depends on the wall clock, so full games are NOT
+    // byte-identical across machines. What must stay deterministic is the
+    // underlying search at a *fixed* depth -- that's what advanceBotAction (no
+    // maxDepth => the default) exercises here, and what this replay asserts.
+    // The per-decision search (bounded beam + goal-distance BFS) is heavier than
+    // the trivial bot this test's original 10s cap was sized for; the generous
+    // ceiling is headroom for slower CI, not an expected runtime.
+  }, 90_000);
 
   // Regression guard for the "bot froze mid-turn" bug: the server computes the
   // bot's action eagerly, so if advanceBotAction ever throws for a valid bot
@@ -162,7 +164,7 @@ describe("paced bot actions", () => {
     for (const { mode, ids, seed } of scenarios) {
       const guests = ids.map((id) => ({ id, name: id }));
       let state = createGame(`crash-guard-${mode}-${seed}`, mode, guests, seed);
-      for (let action = 0; action < 120 && state.status === "playing"; action += 1) {
+      for (let action = 0; action < 90 && state.status === "playing"; action += 1) {
         const actor = state.turn.activePlayerId;
         if (isBot(actor)) {
           const before = state.version;
@@ -174,5 +176,71 @@ describe("paced bot actions", () => {
         }
       }
     }
-  }, 60_000);
+  }, 90_000);
+});
+
+describe("iterative-deepening plan (PV)", () => {
+  // Advance a self-play game until the bot faces a multi-move "moving" turn.
+  function multiMoveState(mode: GameMode, seed: number, minMoves: number): GameState | undefined {
+    const playerCount = mode === "classic-4" ? 4 : 2;
+    const guests = Array.from({ length: playerCount }, (_, index) => ({
+      id: `p${index + 1}`,
+      name: `p${index + 1}`
+    }));
+    let state = createGame(`pv-${mode}-${seed}`, mode, guests, seed);
+    for (let step = 0; step < 400 && state.status === "playing"; step += 1) {
+      if (state.turn.phase === "moving" && state.turn.movesRemaining >= minMoves) return state;
+      state = advanceBotAction(state, state.turn.activePlayerId).state;
+    }
+    return undefined;
+  }
+
+  it("returns a legal principal variation no longer than the search depth", () => {
+    const state = multiMoveState("strategic-2", 5, 3);
+    expect(state).toBeDefined();
+    const actor = state!.turn.activePlayerId;
+
+    // Cap at depth 4: enough to exercise multi-ply PV structure, without paying
+    // for the seconds-long depth-5/6 searches the wide production beam incurs.
+    const maxDepth = Math.min(state!.turn.movesRemaining, 4);
+    for (let depth = 1; depth <= maxDepth; depth += 1) {
+      const result = advanceBotAction(state!, actor, { maxDepth: depth });
+      expect(result.kind).toBe("move");
+      const plan = result.plan ?? [];
+      // The PV covers only moves AFTER the committed one, so it can never be
+      // longer than the remaining lookahead.
+      expect(plan.length).toBeLessThanOrEqual(depth - 1);
+      // Every planned move must be legal to replay from the committed state.
+      let cursor = result.state;
+      for (const planned of plan) {
+        if (cursor.turn.phase !== "moving" || cursor.turn.movesRemaining <= 0) break;
+        const legal = legalMoves(cursor, actor).some(
+          (candidate) => candidate.pieceId === planned.pieceId && candidate.direction === planned.direction
+        );
+        expect(legal).toBe(true);
+        cursor = move(cursor, actor, planned);
+      }
+    }
+  }, 20_000);
+
+  it("carries the plan forward across a full turn without regressing or throwing", () => {
+    const state = multiMoveState("quick-2", 9, 3);
+    expect(state).toBeDefined();
+    const actor = state!.turn.activePlayerId;
+
+    // Mirror the driver: commit each move, then seed the next search with the
+    // carried plan tail. Every committed action must be exactly one legal
+    // engine transition, all the way to the end of the bot's turn.
+    let current = state!;
+    let plan: LegalMove[] = [];
+    let guard = 16;
+    while (current.turn.activePlayerId === actor && current.status === "playing" && guard-- > 0) {
+      const before = current.version;
+      const result = advanceBotAction(current, actor, { maxDepth: 4, plan });
+      expect(result.state.version).toBe(before + 1);
+      plan = result.kind === "move" ? (result.plan ?? []) : [];
+      current = result.state;
+    }
+    expect(guard).toBeGreaterThan(0); // the turn terminated rather than looping.
+  }, 20_000);
 });

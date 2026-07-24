@@ -89,3 +89,26 @@ load: the browser streams one shuffled track only after audio is unlocked. Initi
   and audio controls. Current coverage is strongest in deterministic rules and protocol smoke tests.
 - Consider major Vite, Lucide, and TypeScript upgrades separately. They were not mixed into this performance pass
   because each requires its own compatibility validation.
+
+## Addendum: anytime bot search (July 23, 2026)
+
+The bot's move selection changed from a fixed-depth, eval-count-bounded search (paced by a fixed post-roll delay)
+to iterative deepening. When a bot move is scheduled, `GameRoom` runs the deepening synchronously and eagerly --
+deepening one level at a time until the next level is predicted to exceed a compute cap (`MAX_COMPUTE_MS`, ~1.5s,
+so the room's isolate never blocks for long) or there is no more useful depth (own moves left this turn) -- and
+keeps the deepest completed line. The result is then held until a single pacing alarm fires, so calculation hides
+inside the pause rather than adding to it. The visible pause is drawn in [floor, budget]: 1s/3s for the first
+move of a turn, 750ms/1s for each later move (shorter remaining horizon, so cheaper); rolls/cards/choices are a
+short fixed pause. An earlier design chunked the deepening across many rapid self-rescheduling alarms; that was
+abandoned because the Durable Object runtime cancels a rapid self-rescheduled alarm chain (freezing the bot
+mid-search). Now there is exactly one alarm per action, at a normal future time. The bot carries its principal
+variation forward within a turn so a shorter later search re-scores the same plan to full depth and cannot
+regress ("plan coherence"). Opening variety (first three turns per player) picks a random move among the top
+candidates, salted by game id so openings differ across games while seeded replays stay identical.
+
+Consequence for determinism: full bot games are no longer byte-identical across machines, because the depth
+reached depends on the wall clock. The underlying per-depth search is still deterministic, and the runtime stores
+canonical state snapshots rather than replaying bot decisions, so this is a test/reproducibility change only, not
+a correctness one. `bot.test.ts` now asserts fixed-depth determinism and principal-variation legality/coherence;
+a Worker integration test drives a full anytime turn and asserts it deepens and commits exactly one legal engine
+transition per alarm without freezing.

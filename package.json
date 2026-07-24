@@ -6,6 +6,7 @@
     "dev": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --parallel --filter @slidescape/game --filter @slidescape/worker --filter @slidescape/web dev",
     "build": "pnpm --filter @slidescape/game build && pnpm --filter @slidescape/web build && pnpm --filter @slidescape/worker build",
     "benchmark:rules": "pnpm --filter @slidescape/game build && node scripts/benchmark-rules.mjs",
+    "arena": "pnpm --filter @slidescape/game build && node scripts/bot-arena.mjs",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry": "pnpm build && wrangler deploy --dry-run",
     "format": "prettier --write .",

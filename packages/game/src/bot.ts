@@ -29,6 +29,19 @@ export type BotActionKind = "roll" | "move" | "choice" | "end-turn" | "fish" | "
 export interface BotActionResult {
   state: GameState;
   kind: BotActionKind;
+  // Principal variation: the bot's own remaining planned moves this turn AFTER
+  // the committed action, best-first. Only populated for "move" actions. The
+  // pacing driver carries this forward so a shorter, time-boxed search on the
+  // next move can re-score the same plan to full depth and never "forget" it.
+  plan?: LegalMove[];
+}
+
+export interface BotActionOptions {
+  // Cap the move search depth (the pacing driver raises this level-by-level for
+  // anytime iterative deepening). Defaults to SEARCH_MAX_DEPTH.
+  maxDepth?: number;
+  // A carried-forward principal variation to anchor the move search (coherence).
+  plan?: LegalMove[];
 }
 
 // =====================================================================
@@ -497,7 +510,7 @@ function openingRandoms(state: GameState): [number, number] {
 // =====================================================================
 
 let SEARCH_MAX_DEPTH = 3;
-const EVAL_BUDGET = 1_500; // hard, deterministic cap on evaluate() calls per decision.
+let EVAL_BUDGET = 1_500; // hard, deterministic cap on evaluate() calls per decision.
 const ICE_MOVE_BIAS = 3; // gentle nudge to prefer moving penguins in near-ties.
 const TIE_EPS = 6; // candidates within this of the best are "equivalent".
 const EXPLORE_PROBABILITY = 0.08; // chance to take a near-best alternative for variety.
@@ -517,11 +530,39 @@ const OPENING_MAX_SACRIFICE = 200;
 const inOpening = (state: GameState): boolean =>
   state.turn.number <= OPENING_TURNS * state.turnOrder.length;
 
+// Beam floor is 4: the anytime driver bounds cost by wall-clock (it stops
+// deepening before a level would overrun the budget), so wide turns no longer
+// need to collapse to greedy -- keeping >=4 candidates avoids pruning the best
+// multi-move setup at the root, which is where narrow beams lose the most.
+let BEAM_OVERRIDE = 0; // >0 forces a flat beam (self-play tuning only).
 function beamWidthFor(branching: number): number {
+  if (BEAM_OVERRIDE > 0) return BEAM_OVERRIDE;
   if (branching <= 8) return 6;
-  if (branching <= 16) return 4;
-  if (branching <= 24) return 3;
-  return 1; // very wide turns fall back to greedy so worst case stays bounded.
+  if (branching <= 16) return 5;
+  return 4;
+}
+
+const sameMove = (a: LegalMove, b: LegalMove): boolean =>
+  a.pieceId === b.pieceId && a.direction === b.direction;
+
+// Score a carried-forward plan by replaying as much of it as is still legal and
+// evaluating the end state. O(remaining) -- one line, not a tree -- so even a
+// time-starved shallow search can always weigh the plan at its true depth.
+function evaluatePlanLine(
+  state: GameState,
+  actorId: string,
+  plan: LegalMove[]
+): { value: number; prefix: LegalMove[] } {
+  let cursor = state;
+  const prefix: LegalMove[] = [];
+  for (const planned of plan) {
+    if (!canContinue(cursor, actorId)) break;
+    const legal = legalMoves(cursor, actorId).find((candidate) => sameMove(candidate, planned));
+    if (!legal) break;
+    cursor = simulateMoveForSearch(cursor, legal);
+    prefix.push(legal);
+  }
+  return { value: evaluate(cursor, actorId), prefix };
 }
 
 function canContinue(state: GameState, actorId: string): boolean {
@@ -539,44 +580,62 @@ interface ScoredCandidate {
   candidate: LegalMove;
   after: GameState;
   value: number;
+  line: LegalMove[]; // best line found from this candidate, starting with it.
+}
+
+interface Continuation {
+  value: number;
+  line: LegalMove[];
 }
 
 interface SearchResult {
   move: LegalMove;
   after: GameState;
   value: number;
+  line: LegalMove[]; // full principal variation, starting with `move`.
 }
 
 // Best evaluate() reachable from `state` within `depth` more of the actor's
-// own moves. Pure lite-sim; the shared budget bounds total work.
+// own moves, plus the line that achieves it. Pure lite-sim; the shared budget
+// bounds total work.
 function bestContinuation(
   state: GameState,
   actorId: string,
   depth: number,
   budget: { evals: number }
-): number {
-  if (budget.evals <= 0) return evaluate(state, actorId);
+): Continuation {
+  if (budget.evals <= 0) return { value: evaluate(state, actorId), line: [] };
   const candidates = legalMoves(state, actorId);
-  if (candidates.length === 0) return evaluate(state, actorId);
+  if (candidates.length === 0) return { value: evaluate(state, actorId), line: [] };
 
   const scored: ScoredCandidate[] = [];
   for (const candidate of candidates) {
     if (budget.evals <= 0) break;
     budget.evals -= 1;
     const after = simulateMoveForSearch(state, candidate);
-    scored.push({ candidate, after, value: evaluate(after, actorId) + candidateBias(candidate, state) });
+    scored.push({
+      candidate,
+      after,
+      value: evaluate(after, actorId) + candidateBias(candidate, state),
+      line: [candidate]
+    });
   }
   scored.sort((a, b) => b.value - a.value);
-  if (depth <= 1) return scored[0]!.value;
+  if (depth <= 1) return { value: scored[0]!.value, line: scored[0]!.line };
 
   const width = beamWidthFor(candidates.length);
-  let best = scored[0]!.value;
+  let best: Continuation = { value: scored[0]!.value, line: scored[0]!.line };
   for (const node of scored.slice(0, width)) {
     let value = node.value;
+    let line = node.line;
     if (canContinue(node.after, actorId)) {
-      value = Math.max(value, bestContinuation(node.after, actorId, depth - 1, budget));
+      const cont = bestContinuation(node.after, actorId, depth - 1, budget);
+      if (cont.value > value) {
+        value = cont.value;
+        line = [node.candidate, ...cont.line];
+      }
     }
-    if (value > best) best = value;
+    if (value > best.value) best = { value, line };
   }
   return best;
 }
@@ -584,7 +643,12 @@ function bestContinuation(
 // Root move selection: deep-value the beam, then pick among near-equivalent
 // top candidates with board-derived randomness (variety + anti-oscillation),
 // escalating to a sharp pick when a win is on the line.
-function searchBestMove(state: GameState, actorId: string, depth: number): SearchResult | undefined {
+function searchBestMove(
+  state: GameState,
+  actorId: string,
+  depth: number,
+  seedPlan?: LegalMove[]
+): SearchResult | undefined {
   const candidates = legalMoves(state, actorId);
   if (candidates.length === 0) return undefined;
 
@@ -592,7 +656,12 @@ function searchBestMove(state: GameState, actorId: string, depth: number): Searc
   const scored: ScoredCandidate[] = candidates.map((candidate) => {
     budget.evals -= 1;
     const after = simulateMoveForSearch(state, candidate);
-    return { candidate, after, value: evaluate(after, actorId) + candidateBias(candidate, state) };
+    return {
+      candidate,
+      after,
+      value: evaluate(after, actorId) + candidateBias(candidate, state),
+      line: [candidate]
+    };
   });
   scored.sort((a, b) => b.value - a.value);
 
@@ -600,10 +669,30 @@ function searchBestMove(state: GameState, actorId: string, depth: number): Searc
     const width = beamWidthFor(candidates.length);
     for (const node of scored.slice(0, width)) {
       if (canContinue(node.after, actorId)) {
-        node.value = Math.max(node.value, bestContinuation(node.after, actorId, depth - 1, budget));
+        const cont = bestContinuation(node.after, actorId, depth - 1, budget);
+        if (cont.value > node.value) {
+          node.value = cont.value;
+          node.line = [node.candidate, ...cont.line];
+        }
       }
     }
     scored.sort((a, b) => b.value - a.value);
+  }
+
+  // Coherence anchor: re-score the carried plan to its true depth and lift its
+  // first move to that value, so this (possibly shallower) search can never
+  // rank the plan below a greedy alternative it simply didn't look far enough
+  // to refute. The search still deviates freely if it finds something better.
+  if (seedPlan && seedPlan.length > 0) {
+    const anchor = scored.find((entry) => sameMove(entry.candidate, seedPlan[0]!));
+    if (anchor) {
+      const { value, prefix } = evaluatePlanLine(state, actorId, seedPlan);
+      if (value > anchor.value) {
+        anchor.value = value;
+        anchor.line = prefix;
+      }
+      scored.sort((a, b) => b.value - a.value);
+    }
   }
 
   const chosen = chooseWithVariety(scored, state, actorId);
@@ -613,7 +702,12 @@ function searchBestMove(state: GameState, actorId: string, depth: number): Searc
   const ordered = [chosen, ...scored.filter((entry) => entry !== chosen)];
   for (const entry of ordered) {
     try {
-      return { move: entry.candidate, after: move(state, actorId, entry.candidate), value: entry.value };
+      return {
+        move: entry.candidate,
+        after: move(state, actorId, entry.candidate),
+        value: entry.value,
+        line: entry.line
+      };
     } catch {
       /* try the next candidate */
     }
@@ -963,13 +1057,17 @@ function resolveReturnPenguinChoice(state: GameState, actorId: string): GameStat
 // contract (exactly one version bump) that the pacing loop depends on.
 // =====================================================================
 
-export function advanceBotAction(state: GameState, actorId: string): BotActionResult {
+export function advanceBotAction(
+  state: GameState,
+  actorId: string,
+  options: BotActionOptions = {}
+): BotActionResult {
   const active = state.players.find((player) => player.id === actorId);
   if (!active || state.status !== "playing" || state.turn.activePlayerId !== actorId) {
     throw new Error("The bot is not the active player.");
   }
   try {
-    return planBotAction(state, actorId);
+    return planBotAction(state, actorId, options);
   } catch {
     return fallbackBotAction(state, actorId);
   }
@@ -1006,7 +1104,7 @@ function fallbackBotAction(state: GameState, actorId: string): BotActionResult {
   return { state: endTurn(state, actorId), kind: "end-turn" };
 }
 
-function planBotAction(state: GameState, actorId: string): BotActionResult {
+function planBotAction(state: GameState, actorId: string, options: BotActionOptions = {}): BotActionResult {
   const active = state.players.find((player) => player.id === actorId)!;
 
   if (state.turn.pendingChoice) {
@@ -1061,8 +1159,10 @@ function planBotAction(state: GameState, actorId: string): BotActionResult {
       const flyoverPlay = tryPlayFlyover(state, actorId);
       if (flyoverPlay) return flyoverPlay;
 
-      const best = searchBestMove(state, actorId, Math.min(SEARCH_MAX_DEPTH, state.turn.movesRemaining));
-      if (best) return { state: best.after, kind: "move" };
+      const depth = Math.min(options.maxDepth ?? SEARCH_MAX_DEPTH, state.turn.movesRemaining);
+      const best = searchBestMove(state, actorId, depth, options.plan);
+      // Carry forward the plan minus the move we're committing now.
+      if (best) return { state: best.after, kind: "move", plan: best.line.slice(1) };
     }
 
     const relocate = tryPlayRelocateAndRoll(state, actorId);
@@ -1097,4 +1197,19 @@ export function __defaultBotWeights(): Weights {
 /** @internal Force a shallower search for fast weight tuning (production uses 3). */
 export function __setSearchMaxDepth(depth: number): void {
   SEARCH_MAX_DEPTH = depth;
+}
+
+/** @internal Force a flat beam width for self-play tuning (0 restores the default). */
+export function __setBeamWidth(width: number): void {
+  BEAM_OVERRIDE = width;
+}
+
+/** @internal Override the per-decision evaluate() budget for self-play tuning. */
+export function __setEvalBudget(budget: number): void {
+  EVAL_BUDGET = budget;
+}
+
+/** @internal Restore the shipped default evaluate() budget. */
+export function __resetEvalBudget(): void {
+  EVAL_BUDGET = 1_500;
 }
