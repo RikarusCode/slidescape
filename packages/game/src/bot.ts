@@ -468,6 +468,28 @@ function boardRandom(state: GameState): number {
   return nextRandom(boardHash(state) ^ 0x9e3779b1)[0];
 }
 
+// FNV-1a over the game id -- a stable per-game salt. Needed for opening variety
+// because the opening board is byte-identical every game, so `boardHash` alone
+// would pick the same "random" opening move every time. Mixing the game id in
+// varies the pick across games while staying deterministic within one (so
+// seeded replays remain identical).
+function hashString(value: string): number {
+  let h = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    h ^= value.charCodeAt(index);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+// Two decorrelated [0,1) draws for the opening pick: one gates whether to
+// randomize this move, the other indexes the candidate band. Salted by game id.
+function openingRandoms(state: GameState): [number, number] {
+  const [gate, cursor] = nextRandom(boardHash(state) ^ hashString(state.id));
+  const [pick] = nextRandom(cursor ^ 0x85ebca6b);
+  return [gate, pick];
+}
+
 // =====================================================================
 // Search: fixed-cost, deterministic maximization over the bot's own remaining
 // moves this turn. The bot re-plans every call, so depth 2-3 suffices to avoid
@@ -480,6 +502,20 @@ const ICE_MOVE_BIAS = 3; // gentle nudge to prefer moving penguins in near-ties.
 const TIE_EPS = 6; // candidates within this of the best are "equivalent".
 const EXPLORE_PROBABILITY = 0.08; // chance to take a near-best alternative for variety.
 const EXPLORE_EPS = 12; // exploration never sacrifices more than this much value.
+
+// Opening variety: for each player's first few turns we frequently pick a
+// random move from among the top few candidates, so bots don't play identical
+// openings game after game. Suppressed once a win is on the line (see `sharp`).
+const OPENING_TURNS = 3; // per player.
+const OPENING_EXPLORE_PROBABILITY = 0.25; // chance a given opening move is randomized.
+const OPENING_TOP_K = 5; // pick uniformly among this many best candidates.
+// A blunder guard so the random pick never gifts a position: candidates more
+// than this far below the best are excluded from the opening band regardless of
+// rank (roughly half a "scoring-ready" penguin).
+const OPENING_MAX_SACRIFICE = 200;
+
+const inOpening = (state: GameState): boolean =>
+  state.turn.number <= OPENING_TURNS * state.turnOrder.length;
 
 function beamWidthFor(branching: number): number {
   if (branching <= 8) return 6;
@@ -590,6 +626,20 @@ function chooseWithVariety(scored: ScoredCandidate[], state: GameState, actorId:
   const urgency = computeUrgency(state, actorId);
   const sharp = urgency.offense > 1 || urgency.defense > 1;
   const rng = boardRandom(state);
+
+  // Opening variety takes priority over the subtle near-tie exploration: for the
+  // first few turns, frequently pick a random move among the top-K (excluding
+  // any that sacrifice too much). Uses id-salted draws so the opening differs
+  // across games (the opening board alone is identical every game).
+  if (!sharp && inOpening(state) && scored.length > 1) {
+    const [gate, pick] = openingRandoms(state);
+    if (gate < OPENING_EXPLORE_PROBABILITY) {
+      const band = scored
+        .slice(0, OPENING_TOP_K)
+        .filter((entry) => best.value - entry.value <= OPENING_MAX_SACRIFICE);
+      return band[Math.floor(pick * band.length)] ?? best;
+    }
+  }
 
   if (!sharp && rng < EXPLORE_PROBABILITY && scored.length > 1) {
     const second = scored[1]!;
