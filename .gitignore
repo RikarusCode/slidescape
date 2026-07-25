@@ -9,3 +9,5 @@ coverage/
 .wrangler/
 .wrangler-dry-run/
 .dev.vars
+.claude/
+.agents/
