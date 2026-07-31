@@ -1,10 +1,16 @@
 import type { GameMode } from "@slidescape/game";
 
 export const SESSION_KEY = "slidescape-session-v1";
+// A failed reconnect is only worth telling the player about if they were
+// actually in that match recently; a day-old session shouldn't nag them on a
+// fresh visit. "Recent" = connected to the room within this window.
+const RECENT_MATCH_MS = 60 * 60 * 1000; // 1 hour
 export interface Session {
   playerId: string;
   reconnectToken: string;
   roomId?: string;
+  /** Epoch ms of the last successful connect to `roomId`. */
+  roomAt?: number;
 }
 
 interface ActionReply {
@@ -121,11 +127,20 @@ class SlidescapeSocket implements GameSocket {
           this.openRoom(this.identity.roomId);
           return;
         }
+        // The room is gone. Clear the stale pointer and PERSIST that, so a dead
+        // room isn't retried (and re-announced) on every future load. Only
+        // surface the notice if the player was in this match recently.
+        const wasRecent =
+          typeof this.identity.roomAt === "number" && Date.now() - this.identity.roomAt < RECENT_MATCH_MS;
         delete this.identity.roomId;
-        this.fire(
-          "session-reset",
-          reply.message ?? "Your previous match is no longer available. You can start a new game."
-        );
+        delete this.identity.roomAt;
+        localStorage.setItem(SESSION_KEY, JSON.stringify(this.identity));
+        if (wasRecent) {
+          this.fire(
+            "session-reset",
+            reply.message ?? "Your previous match is no longer available. You can start a new game."
+          );
+        }
       } catch {
         this.fire("connect_error", new Error("Could not reach the game server."));
         return;
@@ -244,6 +259,10 @@ class SlidescapeSocket implements GameSocket {
       this.reconnectTimer = undefined;
       this.reconnectAttempt = 0;
       this.setConnected(true);
+      // Mark the match as freshly active, so a later failed reconnect knows
+      // whether the player was actually playing recently.
+      this.identity.roomAt = Date.now();
+      localStorage.setItem(SESSION_KEY, JSON.stringify(this.identity));
     });
     socket.addEventListener("message", (event) => this.receive(event.data));
     socket.addEventListener("close", () => {
@@ -338,12 +357,14 @@ class SlidescapeSocket implements GameSocket {
 
   private setRoom(roomId: string): void {
     this.identity.roomId = roomId;
+    this.identity.roomAt = Date.now();
     localStorage.setItem(SESSION_KEY, JSON.stringify(this.identity));
     this.fire("session", { ...this.identity });
   }
 
   private clearRoom(): void {
     delete this.identity.roomId;
+    delete this.identity.roomAt;
     localStorage.setItem(SESSION_KEY, JSON.stringify(this.identity));
   }
 
